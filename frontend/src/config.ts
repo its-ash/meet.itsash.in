@@ -1,0 +1,10 @@
+export const SIGNAL_HOST = "signal.itsash.in";
+export const SIGNAL_WS_URL = `wss://${SIGNAL_HOST}/ws`;
+export const SIGNAL_NEW_ROOM_URL = `https://${SIGNAL_HOST}/new-room`;
+
+export const ICE_SERVERS: RTCIceServer[] = [
+  { urls: "stun:stun.cloudflare.com:3478" },
+  { urls: "stun:stun.l.google.com:19302" },
+];
+
+export const PAIR_TIMEOUT_MS = 5000;

@@ -1,0 +1,18 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "meet-signal",
+  "main": "src/index.ts",
+  "compatibility_date": "2025-01-10",
+  "compatibility_flags": ["nodejs_compat"],
+  "routes": [
+    { "pattern": "signal.itsash.in", "custom_domain": true }
+  ],
+  "durable_objects": {
+    "bindings": [
+      { "name": "ROOM", "class_name": "RoomSignal" }
+    ]
+  },
+  "migrations": [
+    { "tag": "v1", "new_sqlite_classes": ["RoomSignal"] }
+  ]
+}
