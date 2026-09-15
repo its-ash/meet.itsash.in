@@ -1,16 +1,29 @@
 # Meet — P2P video meeting
 
-Anonymous, room-code-based, peer-to-peer (WebRTC) video meeting. No accounts, no installs, no media servers — audio and video flow directly between two browsers via WebRTC. A Cloudflare Worker + Durable Object only relays the signaling handshake.
+Anonymous, room-code-based, peer-to-peer (WebRTC) video meeting. No accounts, no installs, no media servers — audio and video flow directly between two browsers via WebRTC. A Cloudflare Worker + Durable Object only relays the signaling handshake (and, when configured, mints short-lived TURN credentials).
 
 **Live:** `meet.itsash.in`
 
 ## How it works
 
 1. Host opens the site → gets a 4-character room code and shareable link (`meet.itsash.in/xxxx`).
-2. Guest enters the code (or opens the link) → the two peers connect to the same Cloudflare Durable Object room.
-3. The Worker relays SDP offer/answer and ICE candidates between the two peers over WebSocket.
-4. Once signaling completes, the browser establishes a direct WebRTC `RTCPeerConnection` (STUN-only, no TURN). Media never touches the Worker.
-5. If no second peer joins within 5 seconds, the room is discarded by a Durable Object alarm.
+2. Guest enters the code (or opens the link) → the two peers connect to the same Cloudflare Durable Object room over WebSocket.
+3. The Worker relays SDP offer/answer and ICE candidates between the two peers.
+4. Once signaling completes, the browsers establish a direct WebRTC `RTCPeerConnection` — STUN by default, with an automatic TURN relay fallback (Cloudflare Realtime TURN) for restrictive/symmetric NATs. Media never touches the Worker.
+5. Each connected peer sends a heartbeat ping every 2s; a Durable Object alarm sweeps every 2s and evicts any peer whose last ping is ≥5s old. There's no fixed "waiting" timeout — a host waits indefinitely for a guest to join, and a room's two slots are only freed by this heartbeat sweep (e.g. a crashed tab or dropped network), or immediately on a clean disconnect.
+6. If a guest disconnects cleanly, the host is notified live and returns to the waiting view rather than the call ending — the room stays open for a reconnect.
+7. A third visitor to an occupied room sees a "meeting is full" screen with a one-tap way to start their own meeting.
+
+## Call features
+
+- **Codec preference** — AV1 → VP9 → H264 → VP8 for video, Opus for audio, negotiated via `setCodecPreferences` where supported.
+- **TURN fallback** — the Worker mints short-lived Cloudflare Realtime TURN credentials on request; the client falls back to STUN-only if TURN isn't configured or the request fails.
+- **ICE reconnect** — a brief `disconnected` ICE state triggers an automatic `iceRestart` before the call is considered failed, recovering from transient network drops without ending the call.
+- **Connection-quality indicator** — polls `RTCPeerConnection.getStats()` to surface a subtle "fair/poor connection" or "reconnecting" indicator; hidden when the connection is healthy.
+- **Screen sharing** — swaps the outgoing video track via `replaceTrack` (no renegotiation), reverts to camera automatically when sharing stops (in-app or via the browser's native "stop sharing" control).
+- **Device picker** — switch camera/microphone mid-call from an in-call popover.
+- **Picture-in-picture** — Document PiP where available, falling back to element PiP; the control is hidden entirely in browsers that support neither.
+- Mute/camera toggles, mirrored self-view, call duration, copyable room link.
 
 ## Architecture
 
@@ -19,29 +32,30 @@ Anonymous, room-code-based, peer-to-peer (WebRTC) video meeting. No accounts, no
 │  Browser A    │ ◀──────────────────────────▶ │  Cloudflare Worker + DO      │
 │  (host)       │                              │  meet-signal.its-ash.workers.dev
 │               │ ◀══════ WebRTC media ══════▶ │                              │
-│  Browser B    │                              │  One Durable Object per room │
+│  Browser B    │        (STUN / TURN)          │  One Durable Object per room │
 │  (guest)      │                              │  (RoomSignal)               │
 └───────────────┘                              └──────────────────────────────┘
 ```
 
 ### `frontend/`
 
-Static site built with Vite + TypeScript + Tailwind CSS, output to `docs/` and served via GitHub Pages.
+Static site built with Vite + TypeScript + Tailwind CSS v4, output to `docs/` at the repo root and served via GitHub Pages.
 
-- `src/main.ts` — landing page UI: create/join a room, fetch a new room code from the Worker.
-- `src/call.ts` — orchestrates the signaling session, owns the WebSocket and `RTCPeerConnection`.
-- `src/rtc.ts` — native WebRTC helpers (media capture, track negotiation).
-- `src/ui.ts` — in-call UI rendering.
-- `src/config.ts` — signal host, ICE servers, timeouts.
-- `wasm-signal/` — Rust crate compiled to WASM via `wasm-pack`. Implements the signaling protocol / session state machine (`Idle → WaitingForPeer → Signaling → Connected`). Output lands in `src/wasm/` (gitignored, regenerated by `make build`).
+- `src/main.ts` — routing (landing / waiting / call / ended / full), wires `CallSession` events to the UI, binds all controls.
+- `src/call.ts` — `CallSession`: owns the WebSocket, `RTCPeerConnection`, heartbeat, ICE reconnect, screen share, device switching.
+- `src/rtc.ts` — WebRTC helpers: media capture, codec preferences, TURN credential fetch, connection-quality polling, device enumeration, screen capture.
+- `src/ui.ts` — DOM rendering and event binding for every view and control.
+- `src/config.ts` — signal host, ICE/TURN endpoints, heartbeat/reconnect/quality-poll intervals.
+- `src/style.css` — design tokens (colors, radii, fonts) and Tailwind entry point.
+- `wasm-signal/` — Rust crate compiled to WASM via `wasm-pack`. Implements the signaling message protocol and session state machine (`WaitingForPeer → Signaling → Connected/Failed`). Output lands in `src/wasm/` (gitignored, regenerated by `make build`).
 
 ### `worker/`
 
 Cloudflare Worker (`meet-signal`) with one Durable Object (`RoomSignal`) per room. Deployed to `meet-signal.its-ash.workers.dev`.
 
-- `src/index.ts` — HTTP routes: `GET /new-room` (mint an unused 4-char code), `/<roomId>` WebSocket upgrade, CORS.
-- `src/room.ts` — `RoomSignal` Durable Object: accepts up to 2 WebSocket peers, relays messages peer-to-peer, sets a 5s pairing alarm, closes on peer-left/no-peer-timeout.
-- `wrangler.jsonc` — binds the `ROOM` Durable Object namespace; SQLite-backed (`new_sqlite_classes`).
+- `src/index.ts` — HTTP routes: `GET /new-room` (mint an unused 4-char code), `GET /room-status/:roomId` (peer count, used to pre-empt joining a full room), `GET /turn-credentials` (mints short-lived TURN credentials via the Cloudflare Realtime TURN API), `/ws/:roomId` WebSocket upgrade, CORS.
+- `src/room.ts` — `RoomSignal` Durable Object: accepts up to 2 WebSocket peers, relays signaling messages between them, tracks per-connection heartbeat timestamps (`serializeAttachment`, survives hibernation), sweeps stale connections on a recurring alarm, notifies the survivor on peer-left instead of closing their socket.
+- `wrangler.jsonc` — binds the `ROOM` Durable Object namespace; SQLite-backed (`new_sqlite_classes`); deploys to the default `workers.dev` subdomain.
 
 ## Prerequisites
 
@@ -49,6 +63,20 @@ Cloudflare Worker (`meet-signal`) with one Durable Object (`RoomSignal`) per roo
 - Rust (stable) + [`wasm-pack`](https://rustwasm.github.io/wasm-pack/)
 - Cloudflare account (for the Worker deploy)
 - GitHub Pages enabled on the repo `main` branch, serving from `/docs`
+
+### Optional: TURN relay
+
+Calls work STUN-only without any extra setup, but will fail to connect on some restrictive/symmetric NATs. To enable the automatic TURN fallback:
+
+1. Create a Turn Key in the Cloudflare dashboard (Realtime → TURN).
+2. Set the two Worker secrets:
+   ```sh
+   cd worker
+   npx wrangler secret put TURN_KEY_ID
+   npx wrangler secret put TURN_KEY_API_TOKEN
+   ```
+
+Until these are set, `/turn-credentials` returns a `503` and the client silently falls back to STUN-only.
 
 ## Local development
 
@@ -78,10 +106,9 @@ Runs `make build`, deploys the Worker via `wrangler deploy`, then commits `docs/
 
 ## Roadmap
 
-- [ ] TURN relay fallback for restrictive NATs
-- [ ] End-to-end call controls (mute, camera toggle, hang-up)
-- [ ] Reconnection / session resume on transient drop
-- [ ] Screen share
+- [ ] Multi-party calls (currently strictly 1:1)
+- [ ] Persistent/named rooms
+- [ ] Noise suppression / background blur (WASM-based pre-encode processing)
 
 ## License
 

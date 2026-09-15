@@ -7,7 +7,7 @@ pub enum SignalMessage {
     Offer { sdp: String },
     Answer { sdp: String },
     IceCandidate { candidate: String, sdp_mid: Option<String>, sdp_m_line_index: Option<u16> },
-    PeerJoined,
+    PeerJoined { role: String },
     PeerLeft,
 }
 
@@ -70,12 +70,14 @@ impl SignalSession {
             serde_json::from_str(json).map_err(|e| JsValue::from_str(&e.to_string()))?;
 
         match message {
-            SignalMessage::PeerJoined => {
+            SignalMessage::PeerJoined { role } => {
                 self.state = SessionState::Signaling;
-                self.queue.push(PendingAction {
-                    kind: "create-offer".into(),
-                    payload: String::new(),
-                });
+                if role == "offerer" {
+                    self.queue.push(PendingAction {
+                        kind: "create-offer".into(),
+                        payload: String::new(),
+                    });
+                }
             }
             SignalMessage::PeerLeft => {
                 self.state = SessionState::WaitingForPeer;

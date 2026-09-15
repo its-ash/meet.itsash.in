@@ -35,11 +35,17 @@ export class RoomSignal extends DurableObject<Env> {
     this.ctx.acceptWebSocket(server);
     this.touch(server);
 
-    const nowPaired = this.ctx.getWebSockets().length === 2;
+    const allSockets = this.ctx.getWebSockets();
+    const nowPaired = allSockets.length === 2;
     if (nowPaired) {
-      for (const socket of this.ctx.getWebSockets()) {
-        socket.send(JSON.stringify({ type: "peer-joined" }));
-      }
+      // The socket that was already here (not the one that just connected)
+      // is designated the offerer, so exactly one side starts signaling —
+      // otherwise both peers race to create offers ("glare") and the
+      // second setRemoteDescription fails because the connection is no
+      // longer in the expected signaling state.
+      const existing = allSockets.find((s) => s !== server);
+      existing?.send(JSON.stringify({ type: "peer-joined", role: "offerer" }));
+      server.send(JSON.stringify({ type: "peer-joined", role: "answerer" }));
     }
 
     await this.scheduleSweep();
