@@ -1,8 +1,6 @@
 use serde::{Deserialize, Serialize};
 use wasm_bindgen::prelude::*;
 
-const PAIR_TIMEOUT_MS: f64 = 5000.0;
-
 #[derive(Serialize, Deserialize, Clone)]
 #[serde(tag = "type", rename_all = "kebab-case")]
 pub enum SignalMessage {
@@ -21,7 +19,6 @@ pub enum SessionState {
     Signaling,
     Connected,
     Failed,
-    Discarded,
 }
 
 #[derive(Clone, Debug)]
@@ -39,14 +36,13 @@ fn is_valid_room_id(room_id: &str) -> bool {
 pub struct SignalSession {
     room_id: String,
     state: SessionState,
-    joined_at_ms: f64,
     queue: Vec<PendingAction>,
 }
 
 #[wasm_bindgen]
 impl SignalSession {
     #[wasm_bindgen(constructor)]
-    pub fn new(room_id: &str, now_ms: f64) -> Result<SignalSession, JsValue> {
+    pub fn new(room_id: &str) -> Result<SignalSession, JsValue> {
         let normalized = room_id.to_ascii_lowercase();
         if !is_valid_room_id(&normalized) {
             return Err(JsValue::from_str("room id must be 4 alphanumeric characters"));
@@ -54,7 +50,6 @@ impl SignalSession {
         Ok(SignalSession {
             room_id: normalized,
             state: SessionState::WaitingForPeer,
-            joined_at_ms: now_ms,
             queue: Vec::new(),
         })
     }
@@ -69,26 +64,8 @@ impl SignalSession {
         self.state
     }
 
-    /// Call periodically with the current timestamp; returns true if the
-    /// 5s no-peer window has elapsed while still waiting.
-    pub fn check_timeout(&mut self, now_ms: f64) -> bool {
-        if self.state == SessionState::WaitingForPeer && now_ms - self.joined_at_ms >= PAIR_TIMEOUT_MS {
-            self.state = SessionState::Discarded;
-            true
-        } else {
-            false
-        }
-    }
-
-    pub fn ms_remaining(&self, now_ms: f64) -> f64 {
-        if self.state != SessionState::WaitingForPeer {
-            return 0.0;
-        }
-        (PAIR_TIMEOUT_MS - (now_ms - self.joined_at_ms)).max(0.0)
-    }
-
     /// Feed a raw JSON signaling message received over the WebSocket.
-    pub fn handle_message(&mut self, json: &str, now_ms: f64) -> Result<(), JsValue> {
+    pub fn handle_message(&mut self, json: &str) -> Result<(), JsValue> {
         let message: SignalMessage =
             serde_json::from_str(json).map_err(|e| JsValue::from_str(&e.to_string()))?;
 
@@ -102,7 +79,6 @@ impl SignalSession {
             }
             SignalMessage::PeerLeft => {
                 self.state = SessionState::WaitingForPeer;
-                self.joined_at_ms = now_ms;
                 self.queue.push(PendingAction {
                     kind: "peer-left".into(),
                     payload: String::new(),

@@ -5,8 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>Meet</title>
 <link rel="icon" href="/icon.svg" type="image/svg+xml" />
-  <script type="module" crossorigin src="/assets/index-CAlMolqD.js"></script>
-  <link rel="stylesheet" crossorigin href="/assets/index-CgXKEsVB.css">
+  <script type="module" crossorigin src="/assets/index-BROoIUAy.js"></script>
+  <link rel="stylesheet" crossorigin href="/assets/index-BOeUQfUj.css">
 </head>
 <body class="bg-surface font-sans antialiased h-full">
 
@@ -63,23 +63,19 @@
 <!-- ============================================================ -->
 <!-- WAITING VIEW — waiting for the second peer to join            -->
 <!-- ============================================================ -->
-<main id="view-waiting" class="relative min-h-[100dvh] w-full overflow-hidden bg-surface flex items-center justify-center px-6 hidden">
-  <div class="absolute inset-0 z-0 pointer-events-none" aria-hidden="true">
-    <div class="absolute inset-0 bg-[radial-gradient(ellipse_80%_60%_at_50%_-10%,color-mix(in_srgb,var(--color-accent)_16%,transparent),transparent)]"></div>
-  </div>
+<main id="view-waiting" class="relative h-[100dvh] w-full overflow-hidden bg-surface hidden">
+  <video id="local-preview" class="absolute inset-0 w-full h-full object-cover z-0 bg-surface-raised -scale-x-100" autoplay muted playsinline></video>
+  <div class="absolute inset-0 z-0 bg-gradient-to-t from-black/70 via-black/20 to-black/50 pointer-events-none" aria-hidden="true"></div>
 
-  <div class="relative z-10 w-full max-w-sm text-center">
-    <video id="local-preview" class="w-32 h-32 mx-auto rounded-panel object-cover ring-1 ring-white/10 mb-7 bg-surface-raised" autoplay muted playsinline></video>
+  <div class="relative z-10 h-full w-full flex flex-col items-center justify-center px-6 text-center">
+    <div class="w-11 h-11 mb-5 rounded-full border-2 border-white/25 border-t-white animate-spin" aria-hidden="true"></div>
+    <h1 class="text-white text-lg font-semibold tracking-tight mb-1.5 [text-shadow:0_1px_12px_rgba(0,0,0,0.5)]">Waiting for someone to join</h1>
+    <p class="text-white/70 text-sm mb-6 [text-shadow:0_1px_12px_rgba(0,0,0,0.5)]">Share this link to invite someone</p>
 
-    <h1 class="text-ink text-lg font-semibold tracking-tight mb-1.5">Waiting for someone to join</h1>
-    <p class="text-ink-dim text-sm mb-6" role="status">
-      Discarding in <span id="waiting-countdown" class="font-mono tabular-nums text-ink">5</span>s if no one joins
-    </p>
-
-    <div class="flex items-center justify-between gap-3 rounded-control bg-surface-raised border border-white/10 pl-4 pr-2 py-2">
-      <code id="room-link" class="text-ink text-sm font-mono truncate select-all text-left"></code>
+    <div class="w-full max-w-sm flex items-center justify-between gap-3 rounded-control bg-black/40 backdrop-blur-xl border border-white/10 pl-4 pr-2 py-2">
+      <code id="room-link" class="text-white text-sm font-mono truncate select-all text-left"></code>
       <button id="btn-copy-link" type="button" aria-label="Copy link"
-        class="shrink-0 flex items-center justify-center w-9 h-9 rounded-[0.625rem] bg-white/[0.06] text-ink hover:bg-white/[0.1] active:scale-[0.95] transition-[transform,background-color] duration-150 ease-out-strong">
+        class="shrink-0 flex items-center justify-center w-9 h-9 rounded-[0.625rem] bg-white/10 text-white hover:bg-white/[0.16] active:scale-[0.95] transition-[transform,background-color] duration-150 ease-out-strong">
         <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
           <rect x="9" y="9" width="12" height="12" rx="2"></rect>
           <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
@@ -155,7 +151,7 @@
   <div
     class="absolute z-30 top-[4.5rem] right-4 sm:top-20 sm:right-6 w-24 h-32 sm:w-32 sm:h-44 rounded-panel overflow-hidden ring-1 ring-white/15 shadow-[0_8px_24px_rgba(0,0,0,0.4)] transition-transform duration-200 ease-out-strong hover:scale-[1.02]"
     role="img" aria-label="Your camera preview">
-    <video id="local-video" class="absolute inset-0 w-full h-full object-cover bg-surface-raised" autoplay muted playsinline></video>
+    <video id="local-video" class="absolute inset-0 w-full h-full object-cover bg-surface-raised -scale-x-100" autoplay muted playsinline></video>
   </div>
 
   <div class="absolute bottom-0 inset-x-0 z-20 flex justify-center px-4 pb-6 sm:pb-8">

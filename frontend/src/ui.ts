@@ -29,10 +29,6 @@ export function setRoomLink(roomId: string): void {
   (document.getElementById("room-link") as HTMLElement).textContent = link;
 }
 
-export function setWaitingCountdown(seconds: number): void {
-  (document.getElementById("waiting-countdown") as HTMLElement).textContent = String(seconds);
-}
-
 export function setLocalPreview(stream: MediaStream): void {
   const preview = document.getElementById("local-preview") as HTMLVideoElement;
   preview.srcObject = stream;

@@ -14,7 +14,6 @@ import {
   setLocalVideoStream,
   setRemoteVideoStream,
   setRoomLink,
-  setWaitingCountdown,
   showView,
   startCallDurationTimer,
   stopCallDurationTimer,
@@ -66,7 +65,6 @@ function handleCallEvent(event: CallEvent): void {
     case "waiting":
       stopCallDurationTimer();
       showView("waiting");
-      setWaitingCountdown(Math.ceil(event.msRemaining / 1000));
       break;
     case "connected":
       showView("call");
@@ -74,12 +72,11 @@ function handleCallEvent(event: CallEvent): void {
       break;
     case "discarded":
       stopCallDurationTimer();
-      setEndedMessage("Session ended", "No one joined in time.");
+      setEndedMessage("Session ended", "You were disconnected.");
       showView("ended");
       break;
     case "peer-left":
-      // The other peer disconnected — the "waiting" event that follows
-      // (re-armed wait clock) drives the UI back to the waiting view.
+      // The "waiting" event that follows drives the UI back to the waiting view.
       break;
     case "failed":
       stopCallDurationTimer();

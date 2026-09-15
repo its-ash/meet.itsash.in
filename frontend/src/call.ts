@@ -1,11 +1,11 @@
-import init, { SignalSession, SessionState } from "./wasm/wasm_signal.js";
-import { SIGNAL_WS_URL, PAIR_TIMEOUT_MS, HEARTBEAT_INTERVAL_MS } from "./config";
+import init, { SignalSession } from "./wasm/wasm_signal.js";
+import { SIGNAL_WS_URL, HEARTBEAT_INTERVAL_MS } from "./config";
 import { applyCodecPreferences, createPeerConnection, getLocalStream } from "./rtc";
 
 const PING_MESSAGE = JSON.stringify({ type: "ping" });
 
 export type CallEvent =
-  | { type: "waiting"; msRemaining: number }
+  | { type: "waiting" }
   | { type: "discarded" }
   | { type: "peer-left" }
   | { type: "connected" }
@@ -26,7 +26,6 @@ export class CallSession {
   private pc: RTCPeerConnection | null = null;
   private session: SignalSession | null = null;
   private localStream: MediaStream | null = null;
-  private waitTimer: number | null = null;
   private heartbeatTimer: number | null = null;
   private closed = false;
 
@@ -41,13 +40,11 @@ export class CallSession {
     this.localStream = await getLocalStream();
     this.onEvent({ type: "local-stream", stream: this.localStream });
 
-    // Start the wait clock only once the user has actually granted
-    // camera/mic access — not while the permission prompt was pending.
-    this.session = new SignalSession(this.roomId, Date.now());
+    this.session = new SignalSession(this.roomId);
 
     this.resetPeerConnection();
     this.connectSocket();
-    this.tickWaitTimer();
+    this.onEvent({ type: "waiting" });
     this.startHeartbeat();
   }
 
@@ -91,23 +88,6 @@ export class CallSession {
     this.heartbeatTimer = window.setInterval(() => this.send(PING_MESSAGE), HEARTBEAT_INTERVAL_MS);
   }
 
-  private tickWaitTimer(): void {
-    const step = () => {
-      if (this.closed || !this.session) return;
-      const now = Date.now();
-      if (this.session.state === SessionState.WaitingForPeer) {
-        if (this.session.check_timeout(now)) {
-          this.onEvent({ type: "discarded" });
-          this.stop();
-          return;
-        }
-        this.onEvent({ type: "waiting", msRemaining: this.session.ms_remaining(now) });
-      }
-      this.waitTimer = window.setTimeout(step, 200);
-    };
-    step();
-  }
-
   private connectSocket(): void {
     const ws = new WebSocket(`${SIGNAL_WS_URL}/${this.roomId}`);
     this.ws = ws;
@@ -136,7 +116,7 @@ export class CallSession {
   private async handleSignal(raw: string): Promise<void> {
     if (!this.session || !this.pc) return;
 
-    this.session.handle_message(raw, Date.now());
+    this.session.handle_message(raw);
 
     let action = this.session.next_action();
     while (action) {
@@ -180,6 +160,7 @@ export class CallSession {
       case "peer-left": {
         this.resetPeerConnection();
         this.onEvent({ type: "peer-left" });
+        this.onEvent({ type: "waiting" });
         break;
       }
     }
@@ -201,10 +182,6 @@ export class CallSession {
     if (this.closed) return;
     this.closed = true;
 
-    if (this.waitTimer !== null) {
-      window.clearTimeout(this.waitTimer);
-      this.waitTimer = null;
-    }
     if (this.heartbeatTimer !== null) {
       window.clearInterval(this.heartbeatTimer);
       this.heartbeatTimer = null;
@@ -216,5 +193,3 @@ export class CallSession {
     }
   }
 }
-
-export { PAIR_TIMEOUT_MS };
