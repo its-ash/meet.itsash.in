@@ -1,6 +1,8 @@
 import init, { SignalSession, SessionState } from "./wasm/wasm_signal.js";
-import { SIGNAL_WS_URL, PAIR_TIMEOUT_MS } from "./config";
+import { SIGNAL_WS_URL, PAIR_TIMEOUT_MS, HEARTBEAT_INTERVAL_MS } from "./config";
 import { applyCodecPreferences, createPeerConnection, getLocalStream } from "./rtc";
+
+const PING_MESSAGE = JSON.stringify({ type: "ping" });
 
 export type CallEvent =
   | { type: "waiting"; msRemaining: number }
@@ -25,6 +27,7 @@ export class CallSession {
   private session: SignalSession | null = null;
   private localStream: MediaStream | null = null;
   private waitTimer: number | null = null;
+  private heartbeatTimer: number | null = null;
   private closed = false;
 
   constructor(
@@ -39,17 +42,27 @@ export class CallSession {
     this.localStream = await getLocalStream();
     this.onEvent({ type: "local-stream", stream: this.localStream });
 
-    this.pc = createPeerConnection();
-    for (const track of this.localStream.getTracks()) {
-      this.pc.addTrack(track, this.localStream);
+    this.resetPeerConnection();
+    this.connectSocket();
+    this.tickWaitTimer();
+    this.startHeartbeat();
+  }
+
+  private resetPeerConnection(): void {
+    this.pc?.close();
+    const pc = createPeerConnection();
+    this.pc = pc;
+
+    for (const track of this.localStream?.getTracks() ?? []) {
+      pc.addTrack(track, this.localStream!);
     }
 
-    this.pc.ontrack = (event) => {
+    pc.ontrack = (event) => {
       this.onEvent({ type: "remote-stream", stream: event.streams[0] });
     };
 
-    this.pc.oniceconnectionstatechange = () => {
-      const state = this.pc?.iceConnectionState;
+    pc.oniceconnectionstatechange = () => {
+      const state = pc.iceConnectionState;
       if (state === "connected" || state === "completed") {
         this.session?.mark_connected();
         this.onEvent({ type: "connected" });
@@ -59,7 +72,7 @@ export class CallSession {
       }
     };
 
-    this.pc.onicecandidate = (event) => {
+    pc.onicecandidate = (event) => {
       if (event.candidate) {
         const msg = SignalSession.build_ice_message(
           event.candidate.candidate,
@@ -69,24 +82,25 @@ export class CallSession {
         this.send(msg);
       }
     };
+  }
 
-    this.connectSocket();
-    this.tickWaitTimer();
+  private startHeartbeat(): void {
+    this.heartbeatTimer = window.setInterval(() => this.send(PING_MESSAGE), HEARTBEAT_INTERVAL_MS);
   }
 
   private tickWaitTimer(): void {
     const step = () => {
       if (this.closed || !this.session) return;
       const now = Date.now();
-      if (this.session.check_timeout(now)) {
-        this.onEvent({ type: "discarded" });
-        this.stop();
-        return;
-      }
       if (this.session.state === SessionState.WaitingForPeer) {
+        if (this.session.check_timeout(now)) {
+          this.onEvent({ type: "discarded" });
+          this.stop();
+          return;
+        }
         this.onEvent({ type: "waiting", msRemaining: this.session.ms_remaining(now) });
-        this.waitTimer = window.setTimeout(step, 200);
       }
+      this.waitTimer = window.setTimeout(step, 200);
     };
     step();
   }
@@ -101,8 +115,6 @@ export class CallSession {
       if (this.closed) return;
       if (event.code === 4000) {
         this.onEvent({ type: "discarded" });
-      } else if (event.code === 4002) {
-        this.onEvent({ type: "peer-left" });
       }
       this.stop();
     };
@@ -121,7 +133,7 @@ export class CallSession {
   private async handleSignal(raw: string): Promise<void> {
     if (!this.session || !this.pc) return;
 
-    this.session.handle_message(raw);
+    this.session.handle_message(raw, Date.now());
 
     let action = this.session.next_action();
     while (action) {
@@ -163,8 +175,8 @@ export class CallSession {
         break;
       }
       case "peer-left": {
+        this.resetPeerConnection();
         this.onEvent({ type: "peer-left" });
-        this.stop();
         break;
       }
     }
@@ -189,6 +201,10 @@ export class CallSession {
     if (this.waitTimer !== null) {
       window.clearTimeout(this.waitTimer);
       this.waitTimer = null;
+    }
+    if (this.heartbeatTimer !== null) {
+      window.clearInterval(this.heartbeatTimer);
+      this.heartbeatTimer = null;
     }
     this.ws?.close();
     this.pc?.close();

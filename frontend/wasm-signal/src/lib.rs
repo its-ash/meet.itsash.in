@@ -88,7 +88,7 @@ impl SignalSession {
     }
 
     /// Feed a raw JSON signaling message received over the WebSocket.
-    pub fn handle_message(&mut self, json: &str) -> Result<(), JsValue> {
+    pub fn handle_message(&mut self, json: &str, now_ms: f64) -> Result<(), JsValue> {
         let message: SignalMessage =
             serde_json::from_str(json).map_err(|e| JsValue::from_str(&e.to_string()))?;
 
@@ -101,7 +101,8 @@ impl SignalSession {
                 });
             }
             SignalMessage::PeerLeft => {
-                self.state = SessionState::Failed;
+                self.state = SessionState::WaitingForPeer;
+                self.joined_at_ms = now_ms;
                 self.queue.push(PendingAction {
                     kind: "peer-left".into(),
                     payload: String::new(),

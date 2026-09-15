@@ -1,11 +1,12 @@
 import init, { normalize_room_id } from "./wasm/wasm_signal.js";
-import { SIGNAL_NEW_ROOM_URL } from "./config";
+import { SIGNAL_NEW_ROOM_URL, SIGNAL_ROOM_STATUS_URL } from "./config";
 import { CallSession, type CallEvent } from "./call";
 import {
   bindCameraToggle,
   bindCopyLink,
   bindEndCall,
   bindMicToggle,
+  bindStartNewFromFull,
   setCallRoomCode,
   setEndedMessage,
   setLandingError,
@@ -63,6 +64,7 @@ function handleCallEvent(event: CallEvent): void {
       setRemoteVideoStream(event.stream);
       break;
     case "waiting":
+      stopCallDurationTimer();
       showView("waiting");
       setWaitingCountdown(Math.ceil(event.msRemaining / 1000));
       break;
@@ -76,9 +78,8 @@ function handleCallEvent(event: CallEvent): void {
       showView("ended");
       break;
     case "peer-left":
-      stopCallDurationTimer();
-      setEndedMessage("Call ended", "The other person left the meeting.");
-      showView("ended");
+      // The other peer disconnected — the "waiting" event that follows
+      // (re-armed wait clock) drives the UI back to the waiting view.
       break;
     case "failed":
       stopCallDurationTimer();
@@ -88,7 +89,23 @@ function handleCallEvent(event: CallEvent): void {
   }
 }
 
+async function isRoomFull(roomId: string): Promise<boolean> {
+  try {
+    const res = await fetch(`${SIGNAL_ROOM_STATUS_URL}/${roomId}`);
+    if (!res.ok) return false;
+    const { count } = (await res.json()) as { count: number };
+    return count >= 2;
+  } catch {
+    return false;
+  }
+}
+
 async function enterRoom(roomId: string): Promise<void> {
+  if (await isRoomFull(roomId)) {
+    showView("full");
+    return;
+  }
+
   setRoomLink(roomId);
   setCallRoomCode(roomId);
   showView("waiting");
@@ -126,6 +143,7 @@ function bindCallControls(): void {
     location.href = "/";
   });
   bindCopyLink();
+  bindStartNewFromFull(() => void createRoom());
 }
 
 async function main(): Promise<void> {

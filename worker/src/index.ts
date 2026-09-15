@@ -48,6 +48,20 @@ export default {
       });
     }
 
+    const statusMatch = url.pathname.match(/^\/room-status\/([^/]+)$/);
+    if (statusMatch && request.method === "GET") {
+      const roomId = statusMatch[1];
+      if (!ROOM_ID_RE.test(roomId)) {
+        return new Response("invalid room id", { status: 400 });
+      }
+      const id = env.ROOM.idFromName(roomId.toLowerCase());
+      const stub = env.ROOM.get(id);
+      const count = await stub.getWebSocketCount();
+      return new Response(JSON.stringify({ count }), {
+        headers: { "Content-Type": "application/json", ...corsHeaders(origin) },
+      });
+    }
+
     const match = url.pathname.match(/^\/ws\/([^/]+)$/);
     if (match) {
       const roomId = match[1];

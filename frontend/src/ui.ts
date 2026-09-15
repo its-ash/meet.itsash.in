@@ -1,10 +1,11 @@
-type View = "landing" | "waiting" | "call" | "ended";
+type View = "landing" | "waiting" | "call" | "ended" | "full";
 
 const views: Record<View, HTMLElement> = {
   landing: document.getElementById("view-landing") as HTMLElement,
   waiting: document.getElementById("view-waiting") as HTMLElement,
   call: document.getElementById("view-call") as HTMLElement,
   ended: document.getElementById("view-ended") as HTMLElement,
+  full: document.getElementById("view-full") as HTMLElement,
 };
 
 export function showView(view: View): void {
@@ -99,6 +100,10 @@ export function bindCameraToggle(onToggle: (enabled: boolean) => void): void {
 
 export function bindEndCall(onEnd: () => void): void {
   document.getElementById("btn-end-call")?.addEventListener("click", onEnd);
+}
+
+export function bindStartNewFromFull(onStart: () => void): void {
+  document.getElementById("btn-new-from-full")?.addEventListener("click", onStart);
 }
 
 export function bindCopyLink(): void {

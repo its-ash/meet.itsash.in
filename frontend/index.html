@@ -109,6 +109,27 @@
 </main>
 
 <!-- ============================================================ -->
+<!-- FULL VIEW — room already has two peers                        -->
+<!-- ============================================================ -->
+<main id="view-full" class="relative min-h-[100dvh] w-full overflow-hidden bg-surface flex items-center justify-center px-6 hidden">
+  <div class="relative z-10 w-full max-w-sm text-center">
+    <div class="w-11 h-11 mx-auto mb-5 rounded-full bg-white/[0.06] flex items-center justify-center" aria-hidden="true">
+      <svg class="w-5 h-5 text-ink-dim" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="9" cy="8" r="3"></circle>
+        <path d="M3 20c0-3.2 2.7-6 6-6s6 2.8 6 6"></path>
+        <circle cx="17" cy="8" r="2.4"></circle>
+        <path d="M15.5 14.2c2.6.5 4.5 2.8 4.5 5.8"></path>
+      </svg>
+    </div>
+    <h1 class="text-ink text-lg font-semibold tracking-tight mb-1.5">This meeting is full</h1>
+    <p class="text-ink-dim text-sm mb-8 leading-relaxed">Two people are already in this call. Start your own meeting instead.</p>
+    <button id="btn-new-from-full" type="button" class="inline-flex items-center justify-center gap-2 rounded-control bg-accent text-accent-ink h-11 px-6 font-medium text-sm hover:brightness-110 active:scale-[0.98] transition-[transform,filter] duration-150 ease-out-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/50 focus-visible:ring-offset-2 focus-visible:ring-offset-surface">
+      Start a new meeting
+    </button>
+  </div>
+</main>
+
+<!-- ============================================================ -->
 <!-- CALL VIEW — active 1:1 call, focus mode                        -->
 <!-- ============================================================ -->
 <main id="view-call" class="relative h-[100dvh] w-full overflow-hidden bg-surface hidden">
