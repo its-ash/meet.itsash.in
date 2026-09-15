@@ -37,10 +37,13 @@ export class CallSession {
 
   async start(): Promise<void> {
     await ensureWasm();
-    this.session = new SignalSession(this.roomId, Date.now());
 
     this.localStream = await getLocalStream();
     this.onEvent({ type: "local-stream", stream: this.localStream });
+
+    // Start the wait clock only once the user has actually granted
+    // camera/mic access — not while the permission prompt was pending.
+    this.session = new SignalSession(this.roomId, Date.now());
 
     this.resetPeerConnection();
     this.connectSocket();
