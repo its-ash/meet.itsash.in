@@ -1,4 +1,4 @@
-export const SIGNAL_HOST = "signal.itsash.in";
+export const SIGNAL_HOST = "meet-signal.its-ash.workers.dev";
 export const SIGNAL_WS_URL = `wss://${SIGNAL_HOST}/ws`;
 export const SIGNAL_NEW_ROOM_URL = `https://${SIGNAL_HOST}/new-room`;
 
