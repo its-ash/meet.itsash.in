@@ -24,8 +24,16 @@ export class RoomSignal extends DurableObject<Env> {
       return new Response("expected websocket upgrade", { status: 426 });
     }
 
-    const sockets = this.ctx.getWebSockets();
-    if (sockets.length >= 2) {
+    // A peer that changed networks (e.g. wifi -> cellular) often leaves a
+    // stale socket behind with no clean close event. Reclaim any socket
+    // that's past the heartbeat threshold before judging the room full,
+    // rather than waiting for the next alarm sweep to get around to it.
+    // Count live sockets directly (rather than re-reading getWebSockets()
+    // right after close()) so this doesn't depend on how quickly a closed
+    // socket is removed from that list.
+    const evicted = this.evictStaleSockets();
+    const liveCount = this.ctx.getWebSockets().length - evicted.length;
+    if (liveCount >= 2) {
       return new Response("room full", { status: 409 });
     }
 
@@ -35,7 +43,8 @@ export class RoomSignal extends DurableObject<Env> {
     this.ctx.acceptWebSocket(server);
     this.touch(server);
 
-    const allSockets = this.ctx.getWebSockets();
+    const evictedSet = new Set(evicted);
+    const allSockets = this.ctx.getWebSockets().filter((s) => !evictedSet.has(s));
     const nowPaired = allSockets.length === 2;
     if (nowPaired) {
       // The socket that was already here (not the one that just connected)
@@ -89,20 +98,28 @@ export class RoomSignal extends DurableObject<Env> {
   }
 
   async alarm(): Promise<void> {
+    const evicted = this.evictStaleSockets();
+    const liveCount = this.ctx.getWebSockets().length - evicted.length;
+
+    if (liveCount > 0) {
+      await this.scheduleSweep();
+    } else {
+      await this.ctx.storage.deleteAlarm();
+    }
+  }
+
+  private evictStaleSockets(): WebSocket[] {
     const now = Date.now();
+    const evicted: WebSocket[] = [];
     for (const socket of this.ctx.getWebSockets()) {
       const attachment = socket.deserializeAttachment() as SocketAttachment | null;
       const lastPingMs = attachment?.lastPingMs ?? now;
       if (now - lastPingMs >= HEARTBEAT_THRESHOLD_MS) {
         socket.close(STALE_CLOSE_CODE, "stale-connection");
+        evicted.push(socket);
       }
     }
-
-    if (this.ctx.getWebSockets().length > 0) {
-      await this.scheduleSweep();
-    } else {
-      await this.ctx.storage.deleteAlarm();
-    }
+    return evicted;
   }
 
   private touch(ws: WebSocket): void {

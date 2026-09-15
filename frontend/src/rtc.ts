@@ -42,8 +42,13 @@ export interface DeviceConstraints {
 export async function getLocalStream(constraints: DeviceConstraints = {}): Promise<MediaStream> {
   return navigator.mediaDevices.getUserMedia({
     video: {
+      // Ideal, not exact: lets the browser pick the sensor's natural
+      // portrait/landscape shape (important on mobile) instead of forcing
+      // a fixed 1280x720 landscape frame that then gets cropped oddly by
+      // object-cover in a portrait-shaped video element.
       width: { ideal: 1280 },
       height: { ideal: 720 },
+      aspectRatio: { ideal: window.innerWidth / window.innerHeight },
       frameRate: { ideal: 30 },
       ...(constraints.videoDeviceId ? { deviceId: { exact: constraints.videoDeviceId } } : {}),
     },
