@@ -1,23 +1,34 @@
 import init, { normalize_room_id } from "./wasm/wasm_signal.js";
 import { SIGNAL_NEW_ROOM_URL, SIGNAL_ROOM_STATUS_URL } from "./config";
 import { CallSession, type CallEvent } from "./call";
+import { listDevices } from "./rtc";
 import {
   bindCameraToggle,
   bindCopyLink,
+  bindDevicePicker,
   bindEndCall,
   bindMicToggle,
+  bindPipToggle,
+  bindShareToggle,
   bindStartNewFromFull,
+  populateDeviceSelects,
   setCallRoomCode,
   setEndedMessage,
   setLandingError,
   setLocalPreview,
   setLocalVideoStream,
+  setPipButtonState,
+  setQualityIndicator,
   setRemoteVideoStream,
   setRoomLink,
+  setShareButtonState,
   showView,
   startCallDurationTimer,
   stopCallDurationTimer,
 } from "./ui";
+
+const pipSupported =
+  typeof document !== "undefined" && ("pictureInPictureEnabled" in document || "documentPictureInPicture" in window);
 
 let activeSession: CallSession | null = null;
 
@@ -69,6 +80,13 @@ function handleCallEvent(event: CallEvent): void {
     case "connected":
       showView("call");
       startCallDurationTimer();
+      setQualityIndicator(null);
+      break;
+    case "reconnecting":
+      setQualityIndicator("reconnecting");
+      break;
+    case "quality":
+      setQualityIndicator(event.level);
       break;
     case "discarded":
       stopCallDurationTimer();
@@ -82,6 +100,14 @@ function handleCallEvent(event: CallEvent): void {
       stopCallDurationTimer();
       setEndedMessage("Connection failed", "Could not establish a connection. Please try again.");
       showView("ended");
+      break;
+    case "screen-share-started":
+      sharingScreen = true;
+      setShareButtonState(true);
+      break;
+    case "screen-share-stopped":
+      sharingScreen = false;
+      setShareButtonState(false);
       break;
   }
 }
@@ -127,6 +153,8 @@ function bindLandingForm(): void {
   });
 }
 
+let sharingScreen = false;
+
 function bindCallControls(): void {
   bindMicToggle((enabled) => {
     // Track enable/disable is wired via the local stream captured in main-scope session.
@@ -141,6 +169,50 @@ function bindCallControls(): void {
   });
   bindCopyLink();
   bindStartNewFromFull(() => void createRoom());
+
+  bindShareToggle(() => {
+    if (!activeSession) return;
+    if (sharingScreen) {
+      void activeSession.stopScreenShare();
+    } else {
+      activeSession.startScreenShare().catch(() => {
+        // User dismissed the screen picker or denied permission — no-op.
+      });
+    }
+  });
+
+  bindDevicePicker(() => {
+    void listDevices().then(({ cameras, microphones }) => {
+      populateDeviceSelects(
+        cameras,
+        microphones,
+        (deviceId) => void activeSession?.switchDevices({ videoDeviceId: deviceId }),
+        (deviceId) => void activeSession?.switchDevices({ audioDeviceId: deviceId }),
+      );
+    });
+  });
+
+  if (pipSupported) {
+    bindPipToggle(() => void togglePip());
+  }
+}
+
+let pipActive = false;
+
+async function togglePip(): Promise<void> {
+  const remoteVideo = document.getElementById("remote-video") as HTMLVideoElement;
+  try {
+    if (document.pictureInPictureElement) {
+      await document.exitPictureInPicture();
+      pipActive = false;
+    } else if (document.pictureInPictureEnabled) {
+      await remoteVideo.requestPictureInPicture();
+      pipActive = true;
+    }
+    setPipButtonState(pipActive);
+  } catch {
+    // PiP request rejected (e.g. no video loaded yet) — ignore.
+  }
 }
 
 async function main(): Promise<void> {

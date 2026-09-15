@@ -10,6 +10,8 @@ interface SocketAttachment {
 
 export interface Env {
   ROOM: DurableObjectNamespace<RoomSignal>;
+  TURN_KEY_ID?: string;
+  TURN_KEY_API_TOKEN?: string;
 }
 
 export class RoomSignal extends DurableObject<Env> {

@@ -4,6 +4,7 @@ export { RoomSignal };
 
 const ROOM_ID_RE = /^[a-z0-9]{4}$/i;
 const ROOM_ID_ALPHABET = "23456789abcdefghjkmnpqrstuvwxyz";
+const TURN_CREDENTIAL_TTL_SECONDS = 3600;
 
 function randomRoomId(): string {
   let id = "";
@@ -46,6 +47,43 @@ export default {
         status: 503,
         headers: { "Content-Type": "application/json", ...corsHeaders(origin) },
       });
+    }
+
+    if (url.pathname === "/turn-credentials" && request.method === "GET") {
+      if (!env.TURN_KEY_ID || !env.TURN_KEY_API_TOKEN) {
+        return new Response(JSON.stringify({ error: "turn not configured" }), {
+          status: 503,
+          headers: { "Content-Type": "application/json", ...corsHeaders(origin) },
+        });
+      }
+      try {
+        const turnRes = await fetch(
+          `https://rtc.live.cloudflare.com/v1/turn/keys/${env.TURN_KEY_ID}/credentials/generate-ice-servers`,
+          {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${env.TURN_KEY_API_TOKEN}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({ ttl: TURN_CREDENTIAL_TTL_SECONDS }),
+          },
+        );
+        if (!turnRes.ok) {
+          return new Response(JSON.stringify({ error: "turn credential request failed" }), {
+            status: 502,
+            headers: { "Content-Type": "application/json", ...corsHeaders(origin) },
+          });
+        }
+        const data = await turnRes.json();
+        return new Response(JSON.stringify(data), {
+          headers: { "Content-Type": "application/json", ...corsHeaders(origin) },
+        });
+      } catch {
+        return new Response(JSON.stringify({ error: "turn credential request failed" }), {
+          status: 502,
+          headers: { "Content-Type": "application/json", ...corsHeaders(origin) },
+        });
+      }
     }
 
     const statusMatch = url.pathname.match(/^\/room-status\/([^/]+)$/);
