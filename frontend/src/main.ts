@@ -222,6 +222,12 @@ async function main(): Promise<void> {
 
   const roomId = currentRoomIdFromPath();
   if (roomId) {
+    // A fresh navigation to /xxxx was redirected through 404.html (GitHub
+    // Pages has no file at that path), which lands here at "/" — restore
+    // the room ID to the visible URL without adding a history entry.
+    if (location.pathname !== `/${roomId}`) {
+      history.replaceState({}, "", `/${roomId}`);
+    }
     await enterRoom(roomId);
   } else {
     showView("landing");

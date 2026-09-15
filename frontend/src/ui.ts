@@ -72,24 +72,42 @@ export function stopCallDurationTimer(): void {
   }
 }
 
+function setToggleVisualState(
+  btn: HTMLButtonElement,
+  onIcon: HTMLElement,
+  offIcon: HTMLElement,
+  active: boolean,
+): void {
+  onIcon.classList.toggle("hidden", active);
+  offIcon.classList.toggle("hidden", !active);
+  btn.classList.toggle("bg-danger", active);
+  btn.classList.toggle("bg-white/10", !active);
+}
+
 export function bindMicToggle(onToggle: (enabled: boolean) => void): void {
   const btn = document.getElementById("btn-toggle-mic") as HTMLButtonElement;
+  const onIcon = document.getElementById("icon-mic-on") as HTMLElement;
+  const offIcon = document.getElementById("icon-mic-off") as HTMLElement;
   let enabled = true;
   btn.addEventListener("click", () => {
     enabled = !enabled;
     btn.setAttribute("aria-pressed", String(!enabled));
     btn.setAttribute("aria-label", enabled ? "Mute microphone" : "Unmute microphone");
+    setToggleVisualState(btn, onIcon, offIcon, !enabled);
     onToggle(enabled);
   });
 }
 
 export function bindCameraToggle(onToggle: (enabled: boolean) => void): void {
   const btn = document.getElementById("btn-toggle-camera") as HTMLButtonElement;
+  const onIcon = document.getElementById("icon-camera-on") as HTMLElement;
+  const offIcon = document.getElementById("icon-camera-off") as HTMLElement;
   let enabled = true;
   btn.addEventListener("click", () => {
     enabled = !enabled;
     btn.setAttribute("aria-pressed", String(!enabled));
     btn.setAttribute("aria-label", enabled ? "Turn off camera" : "Turn on camera");
+    setToggleVisualState(btn, onIcon, offIcon, !enabled);
     onToggle(enabled);
   });
 }

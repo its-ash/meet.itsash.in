@@ -164,19 +164,34 @@
 
       <button id="btn-toggle-mic" type="button" aria-label="Mute microphone" aria-pressed="false"
         class="flex items-center justify-center w-12 h-12 rounded-full bg-white/10 text-ink hover:bg-white/[0.16] active:scale-[0.95] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/40 transition-[transform,background-color] duration-150 ease-out-strong">
-        <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <svg id="icon-mic-on" class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
           <rect x="9" y="2" width="6" height="12" rx="3"></rect>
           <path d="M5 10a7 7 0 0 0 14 0"></path>
           <line x1="12" y1="19" x2="12" y2="22"></line>
           <line x1="8" y1="22" x2="16" y2="22"></line>
         </svg>
+        <svg id="icon-mic-off" class="w-5 h-5 hidden" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M9 9v3a3 3 0 0 0 5.12 2.12"></path>
+          <path d="M12.9 4.16A3 3 0 0 1 15 7v2"></path>
+          <path d="M5 10a7 7 0 0 0 10.54 6.04"></path>
+          <path d="M17.9 14.02A7 7 0 0 0 19 10"></path>
+          <line x1="12" y1="19" x2="12" y2="22"></line>
+          <line x1="8" y1="22" x2="16" y2="22"></line>
+          <line x1="2" y1="2" x2="22" y2="22"></line>
+        </svg>
       </button>
 
       <button id="btn-toggle-camera" type="button" aria-label="Turn off camera" aria-pressed="false"
         class="flex items-center justify-center w-12 h-12 rounded-full bg-white/10 text-ink hover:bg-white/[0.16] active:scale-[0.95] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/40 transition-[transform,background-color] duration-150 ease-out-strong">
-        <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <svg id="icon-camera-on" class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
           <rect x="2" y="6" width="14" height="12" rx="3"></rect>
           <path d="M16 10l6-4v12l-6-4"></path>
+        </svg>
+        <svg id="icon-camera-off" class="w-5 h-5 hidden" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M16 16.3V18a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h1.7"></path>
+          <path d="M9.5 6H14a2 2 0 0 1 2 2v4.5"></path>
+          <path d="M22 8v8l-6-4z"></path>
+          <line x1="2" y1="2" x2="22" y2="22"></line>
         </svg>
       </button>
 
