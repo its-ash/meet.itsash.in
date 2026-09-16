@@ -72,7 +72,7 @@
 <!-- ============================================================ -->
 <!-- WAITING VIEW — waiting for the second peer to join            -->
 <!-- ============================================================ -->
-<main id="view-waiting" class="relative h-[100dvh] w-full overflow-hidden bg-surface hidden flex-col">
+<main id="view-waiting" class="relative h-[100dvh] w-full overflow-hidden bg-surface hidden flex flex-col">
   <header class="flex items-center justify-between px-3 md:px-6 h-9 md:h-11 border-b border-white/10 shrink-0 relative z-20 bg-black/70 backdrop-blur-sm">
     <div class="flex items-center gap-2 md:gap-3">
       <div class="flex items-center gap-1">
@@ -116,7 +116,7 @@
 <!-- ============================================================ -->
 <!-- ENDED / ERROR VIEW                                             -->
 <!-- ============================================================ -->
-<main id="view-ended" class="relative h-[100dvh] w-full overflow-hidden bg-surface hidden flex-col scanline">
+<main id="view-ended" class="relative h-[100dvh] w-full overflow-hidden bg-surface hidden flex flex-col scanline">
   <header class="flex items-center justify-between px-3 md:px-6 h-9 md:h-11 border-b border-white/10 shrink-0">
     <div class="flex items-center gap-2 md:gap-3">
       <div class="flex items-center gap-1">
@@ -151,7 +151,7 @@
 <!-- ============================================================ -->
 <!-- FULL VIEW — room already has two peers                        -->
 <!-- ============================================================ -->
-<main id="view-full" class="relative h-[100dvh] w-full overflow-hidden bg-surface hidden flex-col scanline">
+<main id="view-full" class="relative h-[100dvh] w-full overflow-hidden bg-surface hidden flex flex-col scanline">
   <header class="flex items-center justify-between px-3 md:px-6 h-9 md:h-11 border-b border-white/10 shrink-0">
     <div class="flex items-center gap-2 md:gap-3">
       <div class="flex items-center gap-1">
@@ -187,7 +187,7 @@
 <!-- ============================================================ -->
 <!-- CALL VIEW — active 1:1 call, focus mode                        -->
 <!-- ============================================================ -->
-<main id="view-call" class="relative h-[100dvh] w-full overflow-hidden bg-surface hidden flex-col scanline">
+<main id="view-call" class="relative h-[100dvh] w-full overflow-hidden bg-surface hidden flex flex-col scanline">
 
   <!-- Title bar -->
   <header class="flex items-center justify-between px-3 md:px-6 h-9 md:h-11 border-b border-white/10 shrink-0 z-30">
@@ -221,7 +221,7 @@
   </header>
 
   <!-- Main stage -->
-  <main class="relative flex-1 min-h-0">
+  <div class="relative flex-1 min-h-0">
 
     <!-- Peer view -->
     <section class="absolute inset-0 flex flex-col overflow-hidden">
@@ -252,7 +252,7 @@
       </div>
     </div>
 
-  </main>
+  </div>
 
   <!-- Control bar -->
   <footer class="border-t border-white/10 px-3 md:px-6 py-2 md:py-3 shrink-0 relative z-30">
