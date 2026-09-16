@@ -11,14 +11,16 @@ import {
   bindPipToggle,
   bindShareToggle,
   bindStartNewFromFull,
+  hideNetworkIndicator,
   populateDeviceSelects,
   setCallRoomCode,
   setEndedMessage,
   setLandingError,
   setLocalPreview,
   setLocalVideoStream,
+  setNetworkIndicator,
   setPipButtonState,
-  setQualityIndicator,
+  setReconnectingIndicator,
   setRemoteVideoStream,
   setRoomLink,
   setShareButtonState,
@@ -80,13 +82,13 @@ function handleCallEvent(event: CallEvent): void {
     case "connected":
       showView("call");
       startCallDurationTimer();
-      setQualityIndicator(null);
+      hideNetworkIndicator();
       break;
     case "reconnecting":
-      setQualityIndicator("reconnecting");
+      setReconnectingIndicator();
       break;
-    case "quality":
-      setQualityIndicator(event.level);
+    case "network-stats":
+      setNetworkIndicator(event.stats.level, event.stats.downloadKbps, event.stats.uploadKbps);
       break;
     case "discarded":
       stopCallDurationTimer();

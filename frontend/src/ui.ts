@@ -133,28 +133,50 @@ export function bindCopyLink(): void {
 
 type QualityState = "reconnecting" | "fair" | "poor" | "good";
 
-export function setQualityIndicator(state: QualityState | null): void {
+const QUALITY_DOT_CLASS: Record<QualityState, string> = {
+  reconnecting: "bg-amber-400",
+  fair: "bg-amber-400",
+  poor: "bg-danger",
+  good: "bg-emerald-400",
+};
+
+function formatKbps(kbps: number): string {
+  return kbps >= 1000 ? `${(kbps / 1000).toFixed(1)} Mbps` : `${Math.round(kbps)} kbps`;
+}
+
+export function setReconnectingIndicator(): void {
   const el = document.getElementById("quality-indicator") as HTMLElement;
   const dot = document.getElementById("quality-dot") as HTMLElement;
   const label = document.getElementById("quality-label") as HTMLElement;
 
-  if (state === null || state === "good") {
-    el.classList.add("hidden");
-    el.classList.remove("flex");
-    return;
-  }
+  el.classList.remove("hidden");
+  el.classList.add("flex");
+  dot.className = `w-1.5 h-1.5 rounded-full ${QUALITY_DOT_CLASS.reconnecting}`;
+  label.textContent = "Reconnecting…";
+}
+
+export function setNetworkIndicator(level: QualityState, downloadKbps: number | null, uploadKbps: number | null): void {
+  const el = document.getElementById("quality-indicator") as HTMLElement;
+  const dot = document.getElementById("quality-dot") as HTMLElement;
+  const label = document.getElementById("quality-label") as HTMLElement;
 
   el.classList.remove("hidden");
   el.classList.add("flex");
+  dot.className = `w-1.5 h-1.5 rounded-full ${QUALITY_DOT_CLASS[level]}`;
 
-  const copy: Record<Exclude<QualityState, "good">, [string, string]> = {
-    reconnecting: ["bg-amber-400", "Reconnecting…"],
-    fair: ["bg-amber-400", "Fair connection"],
-    poor: ["bg-danger", "Poor connection"],
-  };
-  const [dotClass, text] = copy[state];
-  dot.className = `w-1.5 h-1.5 rounded-full ${dotClass}`;
-  label.textContent = text;
+  if (downloadKbps === null && uploadKbps === null) {
+    label.textContent = "Measuring…";
+    return;
+  }
+  const down = downloadKbps !== null ? formatKbps(downloadKbps) : "–";
+  const up = uploadKbps !== null ? formatKbps(uploadKbps) : "–";
+  label.textContent = `↓${down} ↑${up}`;
+}
+
+export function hideNetworkIndicator(): void {
+  const el = document.getElementById("quality-indicator") as HTMLElement;
+  el.classList.add("hidden");
+  el.classList.remove("flex");
 }
 
 export function bindShareToggle(onToggle: () => void): void {

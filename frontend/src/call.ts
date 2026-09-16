@@ -1,12 +1,13 @@
 import init, { SignalSession } from "./wasm/wasm_signal.js";
 import { SIGNAL_WS_URL, HEARTBEAT_INTERVAL_MS, ICE_RECONNECT_GRACE_MS, QUALITY_POLL_INTERVAL_MS } from "./config";
 import {
+  adaptVideoBitrate,
   applyCodecPreferences,
   createPeerConnection,
   getLocalStream,
   getScreenStream,
   pollConnectionQuality,
-  type ConnectionQuality,
+  type NetworkStats,
   type DeviceConstraints,
 } from "./rtc";
 
@@ -19,7 +20,7 @@ export type CallEvent =
   | { type: "connected" }
   | { type: "reconnecting" }
   | { type: "failed"; reason: string }
-  | { type: "quality"; level: ConnectionQuality }
+  | { type: "network-stats"; stats: NetworkStats }
   | { type: "local-stream"; stream: MediaStream }
   | { type: "remote-stream"; stream: MediaStream }
   | { type: "screen-share-started" }
@@ -111,7 +112,10 @@ export class CallSession {
       this.stopQualityPoll?.();
       this.stopQualityPoll = pollConnectionQuality(
         this.pc!,
-        (level) => this.onEvent({ type: "quality", level }),
+        (stats) => {
+          this.onEvent({ type: "network-stats", stats });
+          void adaptVideoBitrate(this.videoSender, stats.availableOutgoingKbps);
+        },
         QUALITY_POLL_INTERVAL_MS,
       );
       return;
