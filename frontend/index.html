@@ -90,7 +90,7 @@
   </header>
 
   <div class="relative flex-1 min-h-0">
-    <video id="local-preview" class="absolute inset-0 w-full h-full object-cover z-0 bg-surface-raised -scale-x-100" autoplay muted playsinline></video>
+    <video id="local-preview" class="absolute inset-0 w-full h-full object-contain z-0 bg-surface-raised -scale-x-100" autoplay muted playsinline></video>
     <div class="absolute inset-0 z-0 bg-gradient-to-t from-black/80 via-black/20 to-black/60 pointer-events-none" aria-hidden="true"></div>
 
     <div class="relative z-10 h-full w-full flex flex-col items-center justify-center px-6 text-center">
@@ -233,7 +233,7 @@
         <span id="peer-status-badge" class="text-[9px] md:text-[10px] text-white/30 tracking-wider hidden sm:inline"></span>
       </div>
       <div class="flex-1 min-h-0 bg-surface-raised relative">
-        <video id="remote-video" class="absolute inset-0 w-full h-full object-cover" autoplay playsinline></video>
+        <video id="remote-video" class="absolute inset-0 w-full h-full object-contain" autoplay playsinline></video>
         <div class="absolute top-2 md:top-3 left-2 md:left-3 flex items-center gap-1.5 text-[9px] md:text-xs text-white/40 bg-black/60 border border-white/10 rounded px-2 py-1">
           <span class="w-1.5 h-1.5 rounded-full bg-accent pulse-dot"></span>
           LIVE
@@ -248,7 +248,7 @@
         <span class="w-1.5 h-1.5 rounded-full bg-accent"></span>
       </div>
       <div class="flex-1 aspect-[4/3] relative bg-surface-raised">
-        <video id="local-video" class="absolute inset-0 w-full h-full object-cover -scale-x-100" autoplay muted playsinline></video>
+        <video id="local-video" class="absolute inset-0 w-full h-full object-contain -scale-x-100" autoplay muted playsinline></video>
       </div>
     </div>
 
