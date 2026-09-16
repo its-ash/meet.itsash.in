@@ -36,6 +36,8 @@ export function setLocalPreview(stream: MediaStream): void {
 
 export function setCallRoomCode(roomId: string): void {
   (document.getElementById("call-room-code") as HTMLElement).textContent = roomId;
+  const waitingLabel = document.getElementById("call-room-code-waiting");
+  if (waitingLabel) waitingLabel.textContent = roomId;
 }
 
 export function setLocalVideoStream(stream: MediaStream): void {
@@ -80,8 +82,10 @@ function setToggleVisualState(
 ): void {
   onIcon.classList.toggle("hidden", active);
   offIcon.classList.toggle("hidden", !active);
-  btn.classList.toggle("bg-danger", active);
-  btn.classList.toggle("bg-white/10", !active);
+  btn.classList.toggle("border-danger", active);
+  btn.classList.toggle("text-danger", active);
+  btn.classList.toggle("border-white/15", !active);
+  btn.classList.toggle("text-white", !active);
 }
 
 export function bindMicToggle(onToggle: (enabled: boolean) => void): void {
@@ -179,6 +183,12 @@ export function hideNetworkIndicator(): void {
   el.classList.remove("flex");
 }
 
+export function setPeerStatusBadge(width: number, height: number, transport: "direct" | "relay" | null): void {
+  const el = document.getElementById("peer-status-badge") as HTMLElement;
+  const transportLabel = transport === "relay" ? "relay" : transport === "direct" ? "direct" : "…";
+  el.textContent = `${width}×${height} · ${transportLabel}`;
+}
+
 export function bindShareToggle(onToggle: () => void): void {
   document.getElementById("btn-toggle-share")?.addEventListener("click", onToggle);
 }
@@ -187,10 +197,10 @@ export function setShareButtonState(sharing: boolean): void {
   const btn = document.getElementById("btn-toggle-share") as HTMLButtonElement;
   btn.setAttribute("aria-pressed", String(sharing));
   btn.setAttribute("aria-label", sharing ? "Stop sharing your screen" : "Share your screen");
-  btn.classList.toggle("bg-accent", sharing);
-  btn.classList.toggle("text-accent-ink", sharing);
-  btn.classList.toggle("bg-white/10", !sharing);
-  btn.classList.toggle("text-ink", !sharing);
+  btn.classList.toggle("border-accent", sharing);
+  btn.classList.toggle("text-accent", sharing);
+  btn.classList.toggle("border-white/15", !sharing);
+  btn.classList.toggle("text-white", !sharing);
 }
 
 export function bindPipToggle(onToggle: () => void): void {

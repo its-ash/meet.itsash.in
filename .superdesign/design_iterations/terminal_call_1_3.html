@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>meet — terminal call</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&display=swap');
+  :root { font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+  body { background:#000; }
+  .accent { color:#39ff88; }
+  .accent-bg { background:#39ff88; }
+  .accent-border { border-color:#39ff88; }
+  .scanline {
+    background-image: repeating-linear-gradient(
+      0deg,
+      rgba(255,255,255,0.02) 0px,
+      rgba(255,255,255,0.02) 1px,
+      transparent 1px,
+      transparent 3px
+    );
+  }
+  .caret::after {
+    content: '';
+    display:inline-block;
+    width:8px;
+    height:16px;
+    background:#39ff88;
+    margin-left:4px;
+    animation: blink 1s steps(1) infinite;
+    vertical-align:-2px;
+  }
+  @keyframes blink { 50% { opacity:0; } }
+  .pulse-dot {
+    animation: pulse 2s ease-in-out infinite;
+  }
+  @keyframes pulse {
+    0%,100% { opacity:1; }
+    50% { opacity:.35; }
+  }
+  .noise-tile {
+    background:
+      repeating-linear-gradient(45deg, rgba(255,255,255,0.03) 0px, rgba(255,255,255,0.03) 2px, transparent 2px, transparent 8px);
+  }
+  .self-tab {
+    transition: border-color .15s ease, transform .15s ease;
+  }
+  .self-tab:hover {
+    transform: scale(1.03);
+  }
+  .self-tab:active {
+    transform: scale(0.98);
+  }
+  ::selection { background:#39ff88; color:#000; }
+</style>
+</head>
+<body class="min-h-screen w-full text-white overflow-hidden">
+
+  <div class="flex flex-col h-screen w-full scanline p-2 md:p-3 gap-2">
+
+    <!-- Slim room status strip -->
+    <div class="flex items-center justify-between px-3 md:px-5 h-7 md:h-8 shrink-0 text-[10px] md:text-xs">
+      <div class="flex items-center gap-2 text-white/40">
+        <span class="w-1.5 h-1.5 rounded-full accent-bg pulse-dot"></span>
+        <span>connected</span>
+      </div>
+      <div class="flex items-center gap-1.5">
+        <span class="text-white/40">$</span>
+        <span class="text-white/70">room --code</span>
+        <span class="accent font-semibold tracking-widest">xk29</span>
+      </div>
+      <span class="text-white/40">00:12:34</span>
+    </div>
+
+    <!-- Main window: maximized peer terminal with docked self-view tab -->
+    <main class="flex-1 min-h-0 flex flex-col">
+
+      <section class="relative flex-1 min-h-0 border border-white/15 rounded-lg overflow-hidden flex flex-col bg-black">
+
+        <!-- Title bar: peer chrome (left) + docked self-view tab (right) -->
+        <div class="flex items-center justify-between pl-3 pr-2 md:pl-4 md:pr-2.5 h-10 md:h-12 border-b border-white/10 bg-white/[0.03] shrink-0">
+
+          <div class="flex items-center gap-2 md:gap-3 min-w-0">
+            <div class="flex items-center gap-1.5 shrink-0">
+              <span class="w-2.5 h-2.5 rounded-full bg-white/20"></span>
+              <span class="w-2.5 h-2.5 rounded-full bg-white/20"></span>
+              <span class="w-2.5 h-2.5 rounded-full accent-bg pulse-dot"></span>
+            </div>
+            <div class="flex items-center gap-1.5 md:gap-2 text-[11px] md:text-sm text-white/60 truncate">
+              <span class="truncate">peer_1@meet</span>
+              <span class="text-white/25 hidden sm:inline">—</span>
+              <span class="text-white/70 hidden sm:inline">camera.sh</span>
+            </div>
+          </div>
+
+          <!-- Docked self-view tab -->
+          <button class="self-tab relative flex items-center gap-1.5 md:gap-2 pl-1.5 pr-2 md:pl-2 md:pr-2.5 py-1 rounded-md border border-white/15 hover:accent-border shrink-0">
+            <span class="relative w-7 h-7 md:w-9 md:h-9 rounded overflow-hidden border border-white/15 noise-tile flex items-center justify-center shrink-0">
+              <span class="text-[8px] md:text-[10px] font-semibold text-white/70">YOU</span>
+              <span class="absolute top-0.5 right-0.5 w-1.5 h-1.5 rounded-full accent-bg"></span>
+            </span>
+            <span class="hidden md:inline text-[10px] text-white/40">you@meet</span>
+          </button>
+
+        </div>
+
+        <!-- Peer camera feed -->
+        <div class="flex-1 min-h-0 noise-tile flex items-center justify-center relative">
+          <span class="text-4xl md:text-6xl lg:text-7xl font-semibold text-white/70">P1</span>
+
+          <div class="absolute bottom-2.5 left-2.5 md:bottom-3 md:left-3 flex items-center gap-1.5 text-[10px] md:text-xs text-white/40 bg-black/60 border border-white/10 rounded px-2 py-1">
+            <span class="w-1.5 h-1.5 rounded-full accent-bg pulse-dot"></span>
+            peer_1 · stun-only
+          </div>
+
+          <div class="absolute bottom-2.5 right-2.5 md:bottom-3 md:right-3 text-[10px] md:text-xs text-white/25 tracking-wider hidden sm:inline">
+            1280×720
+          </div>
+        </div>
+
+      </section>
+    </main>
+
+    <!-- Control bar -->
+    <footer class="px-2 md:px-6 py-2 md:py-3 shrink-0">
+      <div class="flex items-center justify-center gap-2 md:gap-4 flex-wrap">
+
+        <button class="group flex items-center gap-1.5 md:gap-2 px-3 md:px-5 py-2 md:py-3 rounded-md border border-white/15 hover:accent-border hover:accent transition-colors text-[11px] md:text-sm">
+          <span class="text-white/40 group-hover:accent">[</span>
+          <span>MIC</span>
+          <span class="text-white/40 group-hover:accent">]</span>
+        </button>
+
+        <button class="group flex items-center gap-1.5 md:gap-2 px-3 md:px-5 py-2 md:py-3 rounded-md border border-white/15 hover:accent-border hover:accent transition-colors text-[11px] md:text-sm">
+          <span class="text-white/40 group-hover:accent">[</span>
+          <span>CAM</span>
+          <span class="text-white/40 group-hover:accent">]</span>
+        </button>
+
+        <button class="group flex items-center gap-1.5 md:gap-2 px-3 md:px-5 py-2 md:py-3 rounded-md border accent-border accent text-[11px] md:text-sm">
+          <span class="accent">[</span>
+          <span>SHARE</span>
+          <span class="accent">]</span>
+        </button>
+
+        <button class="group flex items-center gap-1.5 md:gap-2 px-3 md:px-5 py-2 md:py-3 rounded-md border border-red-400/40 text-red-400 hover:bg-red-400 hover:text-black transition-colors text-[11px] md:text-sm">
+          <span>[</span>
+          <span>LEAVE</span>
+          <span>]</span>
+        </button>
+
+      </div>
+    </footer>
+
+  </div>
+
+</body>
+</html>

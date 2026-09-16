@@ -99,7 +99,16 @@ export async function createPeerConnection(): Promise<RTCPeerConnection> {
   return new RTCPeerConnection({ iceServers });
 }
 
+export function getOutgoingVideoResolution(sender: RTCRtpSender | null): { width: number; height: number } | null {
+  const track = sender?.track;
+  if (!track || track.kind !== "video") return null;
+  const settings = track.getSettings();
+  if (!settings.width || !settings.height) return null;
+  return { width: settings.width, height: settings.height };
+}
+
 export type ConnectionQuality = "good" | "fair" | "poor";
+export type TransportType = "direct" | "relay" | null;
 
 export interface NetworkStats {
   level: ConnectionQuality;
@@ -109,6 +118,8 @@ export interface NetworkStats {
   downloadKbps: number | null;
   /** Measured send throughput in kbps, from outbound-rtp byte deltas. */
   uploadKbps: number | null;
+  /** Whether media is flowing directly (STUN/host) or via a TURN relay. */
+  transport: TransportType;
 }
 
 export function pollConnectionQuality(
@@ -133,10 +144,12 @@ export function pollConnectionQuality(
       let bytesReceived = 0;
       let bytesSent = 0;
       let timestamp = 0;
+      let localCandidateId: string | null = null;
 
       stats.forEach((report) => {
         if (report.type === "candidate-pair" && report.state === "succeeded" && "currentRoundTripTime" in report) {
           rttMs = (report.currentRoundTripTime as number) * 1000;
+          localCandidateId = (report.localCandidateId as string) ?? null;
           if ("availableOutgoingBitrate" in report) {
             availableOutgoingBitrate = report.availableOutgoingBitrate as number;
           }
@@ -151,6 +164,14 @@ export function pollConnectionQuality(
           bytesSent = (report.bytesSent as number) ?? 0;
         }
       });
+
+      let transport: TransportType = null;
+      if (localCandidateId) {
+        const localCandidate = stats.get(localCandidateId);
+        if (localCandidate?.type === "local-candidate") {
+          transport = localCandidate.candidateType === "relay" ? "relay" : "direct";
+        }
+      }
 
       let lossRatio = 0;
       let downloadKbps: number | null = null;
@@ -186,6 +207,7 @@ export function pollConnectionQuality(
         availableOutgoingKbps: availableOutgoingBitrate !== null ? availableOutgoingBitrate / 1000 : null,
         downloadKbps,
         uploadKbps,
+        transport,
       });
     } catch {
       // getStats can throw briefly during renegotiation — skip this tick.

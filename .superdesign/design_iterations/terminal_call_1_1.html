@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>meet — terminal call · pip</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&display=swap');
+  :root { font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+  body { background:#000; }
+  .accent { color:#39ff88; }
+  .accent-bg { background:#39ff88; }
+  .accent-border { border-color:#39ff88; }
+  .scanline {
+    background-image: repeating-linear-gradient(
+      0deg,
+      rgba(255,255,255,0.02) 0px,
+      rgba(255,255,255,0.02) 1px,
+      transparent 1px,
+      transparent 3px
+    );
+  }
+  .caret::after {
+    content: '';
+    display:inline-block;
+    width:8px;
+    height:16px;
+    background:#39ff88;
+    margin-left:4px;
+    animation: blink 1s steps(1) infinite;
+    vertical-align:-2px;
+  }
+  @keyframes blink { 50% { opacity:0; } }
+  .pulse-dot {
+    animation: pulse 2s ease-in-out infinite;
+  }
+  @keyframes pulse {
+    0%,100% { opacity:1; }
+    50% { opacity:.35; }
+  }
+  .noise-tile {
+    background:
+      repeating-linear-gradient(45deg, rgba(255,255,255,0.03) 0px, rgba(255,255,255,0.03) 2px, transparent 2px, transparent 8px);
+  }
+  .noise-tile-alt {
+    background:
+      repeating-linear-gradient(-45deg, rgba(57,255,136,0.04) 0px, rgba(57,255,136,0.04) 2px, transparent 2px, transparent 8px);
+  }
+  ::selection { background:#39ff88; color:#000; }
+
+  /* floating self-view */
+  .pip {
+    width: 200px;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.6), 0 0 0 1px rgba(0,0,0,0.4);
+  }
+  @media (max-width: 767px) {
+    .pip { width: 120px; }
+  }
+  @media (min-width: 768px) and (max-width: 1023px) {
+    .pip { width: 160px; }
+  }
+  .grip span {
+    width: 3px;
+    height: 3px;
+    border-radius: 9999px;
+  }
+</style>
+</head>
+<body class="min-h-screen w-full text-white overflow-hidden">
+
+  <div class="flex flex-col h-screen w-full scanline">
+
+    <!-- Title bar (thin) -->
+    <header class="flex items-center justify-between px-3 md:px-6 h-9 md:h-11 border-b border-white/10 shrink-0">
+      <div class="flex items-center gap-2 md:gap-3">
+        <div class="flex items-center gap-1">
+          <span class="w-2 h-2 rounded-full bg-white/20"></span>
+          <span class="w-2 h-2 rounded-full bg-white/20"></span>
+          <span class="w-2 h-2 rounded-full accent-bg pulse-dot"></span>
+        </div>
+        <span class="hidden sm:inline text-white/30 text-[10px] md:text-xs">/usr/bin/meet</span>
+      </div>
+
+      <div class="flex items-center gap-1.5 text-[10px] md:text-sm">
+        <span class="text-white/40">$</span>
+        <span class="text-white">room</span>
+        <span class="text-white/40 hidden sm:inline">--code</span>
+        <span class="accent font-semibold tracking-widest">xk29</span>
+      </div>
+
+      <div class="flex items-center gap-1.5 md:gap-2 text-[10px] md:text-xs text-white/40">
+        <span class="w-1.5 h-1.5 rounded-full accent-bg"></span>
+        <span class="hidden md:inline">connected</span>
+        <span class="text-white/70">00:12:34</span>
+      </div>
+    </header>
+
+    <!-- Main stage: full-bleed peer view with floating self-view -->
+    <main class="relative flex-1 min-h-0">
+
+      <!-- Peer view (dominant, edge-to-edge) -->
+      <section class="absolute inset-0 flex flex-col overflow-hidden">
+        <div class="flex items-center justify-between px-3 md:px-4 h-7 md:h-8 border-b border-white/10 bg-black/70 backdrop-blur-sm shrink-0 z-10">
+          <div class="flex items-center gap-2 text-[10px] md:text-xs text-white/50">
+            <span class="w-1.5 h-1.5 rounded-full accent-bg pulse-dot"></span>
+            <span>peer_1@meet</span>
+          </div>
+          <span class="text-[9px] md:text-[10px] text-white/30 tracking-wider hidden sm:inline">720p · stun-only</span>
+        </div>
+        <div class="flex-1 min-h-0 noise-tile-alt flex items-center justify-center relative">
+          <span class="text-5xl sm:text-6xl md:text-8xl font-semibold text-white/15 select-none">P1</span>
+          <div class="absolute top-2 md:top-3 left-2 md:left-3 flex items-center gap-1.5 text-[9px] md:text-xs text-white/40 bg-black/60 border border-white/10 rounded px-2 py-1">
+            <span class="w-1.5 h-1.5 rounded-full accent-bg pulse-dot"></span>
+            LIVE
+          </div>
+        </div>
+      </section>
+
+      <!-- Floating self-view (PiP) -->
+      <div class="pip absolute bottom-3 right-3 md:bottom-5 md:right-5 border accent-border rounded-lg overflow-hidden flex flex-col bg-black z-20">
+        <div class="flex items-center justify-between px-2 h-6 border-b border-white/10 bg-white/[0.04] shrink-0 cursor-grab active:cursor-grabbing">
+          <span class="text-[9px] md:text-[10px] text-white/60">you@meet</span>
+          <div class="flex items-center gap-1.5">
+            <span class="w-1.5 h-1.5 rounded-full accent-bg"></span>
+            <div class="grip flex flex-col gap-[2px]">
+              <div class="flex gap-[2px]">
+                <span class="bg-white/25"></span><span class="bg-white/25"></span>
+              </div>
+              <div class="flex gap-[2px]">
+                <span class="bg-white/25"></span><span class="bg-white/25"></span>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="flex-1 aspect-[4/3] flex items-center justify-center noise-tile">
+          <span class="text-lg md:text-2xl font-semibold text-white/70">YOU</span>
+        </div>
+      </div>
+
+    </main>
+
+    <!-- Control bar (compact) -->
+    <footer class="border-t border-white/10 px-3 md:px-6 py-2 md:py-3 shrink-0">
+      <div class="flex items-center justify-center gap-2 md:gap-3">
+
+        <button class="group flex items-center gap-1.5 px-3 md:px-4 py-2 rounded-md border border-white/15 hover:accent-border hover:accent transition-colors text-[10px] md:text-xs">
+          <span class="text-white/40 group-hover:accent">[</span>
+          <span>MIC</span>
+          <span class="text-white/40 group-hover:accent">]</span>
+        </button>
+
+        <button class="group flex items-center gap-1.5 px-3 md:px-4 py-2 rounded-md border border-white/15 hover:accent-border hover:accent transition-colors text-[10px] md:text-xs">
+          <span class="text-white/40 group-hover:accent">[</span>
+          <span>CAM</span>
+          <span class="text-white/40 group-hover:accent">]</span>
+        </button>
+
+        <button class="group flex items-center gap-1.5 px-3 md:px-4 py-2 rounded-md border border-white/15 hover:accent-border hover:accent transition-colors text-[10px] md:text-xs">
+          <span class="text-white/40 group-hover:accent">[</span>
+          <span>SHARE</span>
+          <span class="text-white/40 group-hover:accent">]</span>
+        </button>
+
+        <button class="group flex items-center gap-1.5 px-3 md:px-4 py-2 rounded-md border border-red-400/40 text-red-400 hover:bg-red-400 hover:text-black transition-colors text-[10px] md:text-xs">
+          <span>[</span>
+          <span>LEAVE</span>
+          <span>]</span>
+        </button>
+
+      </div>
+      <p class="text-center text-[9px] md:text-[10px] text-white/25 mt-2">meet.itsash.in/xk29 · peer-to-peer · no media touches server</p>
+    </footer>
+
+  </div>
+
+</body>
+</html>

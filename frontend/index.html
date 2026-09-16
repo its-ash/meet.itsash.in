@@ -12,74 +12,103 @@
 <!-- ============================================================ -->
 <!-- LANDING VIEW — create or join a room                          -->
 <!-- ============================================================ -->
-<main id="view-landing" class="relative min-h-[100dvh] w-full overflow-hidden bg-surface flex items-center justify-center px-6">
-  <div class="absolute inset-0 z-0 pointer-events-none" aria-hidden="true">
-    <div class="absolute inset-0 bg-[radial-gradient(ellipse_80%_60%_at_50%_-10%,color-mix(in_srgb,var(--color-accent)_16%,transparent),transparent)]"></div>
-    <div class="absolute inset-0 opacity-[0.035] [background-image:url('data:image/svg+xml;utf8,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%22120%22 height=%22120%22%3E%3Cfilter id=%22n%22%3E%3CfeTurbulence type=%22fractalNoise%22 baseFrequency=%220.9%22 numOctaves=%222%22 stitchTiles=%22stitch%22/%3E%3C/filter%3E%3Crect width=%22100%25%22 height=%22100%25%22 filter=%22url(%23n)%22/%3E%3C/svg%3E')] [background-size:120px]"></div>
-  </div>
-
-  <div class="relative z-10 w-full max-w-sm">
-    <div class="flex items-center gap-2.5 justify-center mb-8">
-      <img src="/icon.svg" alt="" class="w-7 h-7" aria-hidden="true" />
-      <span class="text-ink text-sm font-medium tracking-tight">Meet</span>
+<main id="view-landing" class="relative h-[100dvh] w-full overflow-hidden bg-surface flex flex-col scanline">
+  <header class="flex items-center justify-between px-3 md:px-6 h-9 md:h-11 border-b border-white/10 shrink-0">
+    <div class="flex items-center gap-2 md:gap-3">
+      <div class="flex items-center gap-1">
+        <span class="w-2 h-2 rounded-full bg-white/20"></span>
+        <span class="w-2 h-2 rounded-full bg-white/20"></span>
+        <span class="w-2 h-2 rounded-full bg-accent pulse-dot"></span>
+      </div>
+      <span class="hidden sm:inline text-white/30 text-[10px] md:text-xs">/usr/bin/meet</span>
     </div>
-
-    <h1 class="text-ink text-3xl font-semibold tracking-tight text-center leading-[1.15] mb-2">Start a meeting</h1>
-    <p class="text-ink-dim text-sm text-center mb-9 leading-relaxed">Peer-to-peer video. No account, no download.</p>
-
-    <button id="btn-create-room" type="button"
-      class="w-full flex items-center justify-center gap-2 rounded-control bg-accent text-accent-ink h-12 font-medium text-sm hover:brightness-110 active:scale-[0.98] transition-[transform,filter] duration-150 ease-out-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/50 focus-visible:ring-offset-2 focus-visible:ring-offset-surface">
-      <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-        <path d="M23 7l-7 5 7 5V7z"></path>
-        <rect x="1" y="5" width="15" height="14" rx="2"></rect>
-      </svg>
-      New meeting
-    </button>
-
-    <div class="flex items-center gap-3 my-6" aria-hidden="true">
-      <div class="h-px flex-1 bg-white/10"></div>
-      <span class="text-ink-dim text-xs">or join with a code</span>
-      <div class="h-px flex-1 bg-white/10"></div>
+    <div class="flex items-center gap-1.5 text-[10px] md:text-xs text-white/40">
+      <span class="w-1.5 h-1.5 rounded-full bg-white/20"></span>
+      <span>idle</span>
     </div>
+  </header>
 
-    <form id="form-join-room" class="flex items-center gap-2">
-      <label for="input-room-id" class="sr-only">4-character meeting code</label>
-      <input id="input-room-id" name="roomId" type="text" inputmode="text" maxlength="4" autocomplete="off"
-        placeholder="Enter code"
-        class="flex-1 min-w-0 rounded-control bg-surface-raised border border-white/10 text-ink placeholder-ink-dim/70 text-sm font-mono px-4 h-12 tracking-[0.25em] text-center uppercase transition-colors duration-150 focus-visible:outline-none focus-visible:border-accent/60 focus-visible:ring-2 focus-visible:ring-accent/30" />
-      <button type="submit" aria-label="Join meeting"
-        class="shrink-0 flex items-center justify-center w-12 h-12 rounded-control bg-surface-raised border border-white/10 text-ink hover:bg-white/[0.06] active:scale-[0.97] transition-[transform,background-color] duration-150 ease-out-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40">
-        <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-          <path d="M5 12h14"></path><path d="M13 6l6 6-6 6"></path>
-        </svg>
+  <div class="flex-1 flex items-center justify-center px-6">
+    <div class="w-full max-w-sm">
+      <div class="flex items-center gap-2 justify-center mb-8">
+        <img src="/icon.svg" alt="" class="w-6 h-6" aria-hidden="true" />
+        <span class="text-white text-sm">meet<span class="caret"></span></span>
+      </div>
+
+      <p class="text-white/40 text-xs text-center mb-1"># peer-to-peer video, no account, no download</p>
+      <h1 class="text-accent text-2xl font-semibold tracking-tight text-center mb-8">$ start a meeting</h1>
+
+      <button id="btn-create-room" type="button"
+        class="group w-full flex items-center justify-center gap-2 rounded-md border border-white/15 hover:border-accent h-11 font-medium text-sm text-white hover:text-accent transition-colors duration-150 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent/50">
+        <span class="text-white/40 group-hover:text-accent">[</span>
+        <span>NEW MEETING</span>
+        <span class="text-white/40 group-hover:text-accent">]</span>
       </button>
-    </form>
 
-    <p id="landing-error" class="text-danger text-sm text-center mt-4 hidden" role="alert"></p>
+      <div class="flex items-center gap-3 my-6" aria-hidden="true">
+        <div class="h-px flex-1 bg-white/10"></div>
+        <span class="text-white/30 text-xs">or join with a code</span>
+        <div class="h-px flex-1 bg-white/10"></div>
+      </div>
+
+      <form id="form-join-room" class="flex items-center gap-2">
+        <label for="input-room-id" class="sr-only">4-character meeting code</label>
+        <input id="input-room-id" name="roomId" type="text" inputmode="text" maxlength="4" autocomplete="off"
+          placeholder="xxxx"
+          class="flex-1 min-w-0 rounded-md bg-black border border-white/15 text-white placeholder-white/25 text-sm font-mono px-4 h-11 tracking-[0.3em] text-center uppercase transition-colors duration-150 focus-visible:outline-none focus-visible:border-accent focus-visible:ring-1 focus-visible:ring-accent/40" />
+        <button type="submit" aria-label="Join meeting"
+          class="group shrink-0 flex items-center justify-center gap-1 px-3 h-11 rounded-md border border-white/15 hover:border-accent text-white hover:text-accent transition-colors duration-150 text-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent/40">
+          <span class="text-white/40 group-hover:text-accent">[</span>
+          <span>JOIN</span>
+          <span class="text-white/40 group-hover:text-accent">]</span>
+        </button>
+      </form>
+
+      <p id="landing-error" class="text-danger text-xs text-center mt-4 hidden" role="alert"></p>
+    </div>
   </div>
 </main>
 
 <!-- ============================================================ -->
 <!-- WAITING VIEW — waiting for the second peer to join            -->
 <!-- ============================================================ -->
-<main id="view-waiting" class="relative h-[100dvh] w-full overflow-hidden bg-surface hidden">
-  <video id="local-preview" class="absolute inset-0 w-full h-full object-cover z-0 bg-surface-raised -scale-x-100" autoplay muted playsinline></video>
-  <div class="absolute inset-0 z-0 bg-gradient-to-t from-black/70 via-black/20 to-black/50 pointer-events-none" aria-hidden="true"></div>
+<main id="view-waiting" class="relative h-[100dvh] w-full overflow-hidden bg-surface hidden flex-col">
+  <header class="flex items-center justify-between px-3 md:px-6 h-9 md:h-11 border-b border-white/10 shrink-0 relative z-20 bg-black/70 backdrop-blur-sm">
+    <div class="flex items-center gap-2 md:gap-3">
+      <div class="flex items-center gap-1">
+        <span class="w-2 h-2 rounded-full bg-white/20"></span>
+        <span class="w-2 h-2 rounded-full bg-white/20"></span>
+        <span class="w-2 h-2 rounded-full bg-accent pulse-dot"></span>
+      </div>
+      <span class="hidden sm:inline text-white/30 text-[10px] md:text-xs">/usr/bin/meet/waiting</span>
+    </div>
+    <div class="flex items-center gap-1.5 text-[10px] md:text-sm">
+      <span class="text-white/40">$</span>
+      <span class="text-white">room</span>
+      <span class="text-accent font-semibold tracking-widest" id="call-room-code-waiting"></span>
+    </div>
+  </header>
 
-  <div class="relative z-10 h-full w-full flex flex-col items-center justify-center px-6 text-center">
-    <div class="w-11 h-11 mb-5 rounded-full border-2 border-white/25 border-t-white animate-spin" aria-hidden="true"></div>
-    <h1 class="text-white text-lg font-semibold tracking-tight mb-1.5 [text-shadow:0_1px_12px_rgba(0,0,0,0.5)]">Waiting for someone to join</h1>
-    <p class="text-white/70 text-sm mb-6 [text-shadow:0_1px_12px_rgba(0,0,0,0.5)]">Share this link to invite someone</p>
+  <div class="relative flex-1 min-h-0">
+    <video id="local-preview" class="absolute inset-0 w-full h-full object-cover z-0 bg-surface-raised -scale-x-100" autoplay muted playsinline></video>
+    <div class="absolute inset-0 z-0 bg-gradient-to-t from-black/80 via-black/20 to-black/60 pointer-events-none" aria-hidden="true"></div>
 
-    <div class="w-full max-w-sm flex items-center justify-between gap-3 rounded-control bg-black/40 backdrop-blur-xl border border-white/10 pl-4 pr-2 py-2">
-      <code id="room-link" class="text-white text-sm font-mono truncate select-all text-left"></code>
-      <button id="btn-copy-link" type="button" aria-label="Copy link"
-        class="shrink-0 flex items-center justify-center w-9 h-9 rounded-[0.625rem] bg-white/10 text-white hover:bg-white/[0.16] active:scale-[0.95] transition-[transform,background-color] duration-150 ease-out-strong">
-        <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-          <rect x="9" y="9" width="12" height="12" rx="2"></rect>
-          <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
-        </svg>
-      </button>
+    <div class="relative z-10 h-full w-full flex flex-col items-center justify-center px-6 text-center">
+      <div class="flex items-center gap-1.5 text-xs text-white/50 mb-4">
+        <span class="w-1.5 h-1.5 rounded-full bg-accent pulse-dot"></span>
+        <span>waiting for peer to join<span class="caret"></span></span>
+      </div>
+
+      <div class="w-full max-w-sm flex items-center justify-between gap-3 rounded-md bg-black/60 border border-white/15 pl-4 pr-2 py-2">
+        <code id="room-link" class="text-white text-sm font-mono truncate select-all text-left"></code>
+        <button id="btn-copy-link" type="button" aria-label="Copy link"
+          class="shrink-0 flex items-center justify-center w-9 h-9 rounded border border-white/15 hover:border-accent text-white hover:text-accent active:scale-[0.95] transition-colors duration-150">
+          <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <rect x="9" y="9" width="12" height="12" rx="2"></rect>
+            <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+          </svg>
+        </button>
+      </div>
     </div>
   </div>
 </main>
@@ -87,90 +116,158 @@
 <!-- ============================================================ -->
 <!-- ENDED / ERROR VIEW                                             -->
 <!-- ============================================================ -->
-<main id="view-ended" class="relative min-h-[100dvh] w-full overflow-hidden bg-surface flex items-center justify-center px-6 hidden">
-  <div class="relative z-10 w-full max-w-sm text-center">
-    <div class="w-11 h-11 mx-auto mb-5 rounded-full bg-white/[0.06] flex items-center justify-center" aria-hidden="true">
-      <svg class="w-5 h-5 text-ink-dim" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-        <circle cx="12" cy="12" r="10"></circle>
-        <line x1="12" y1="8" x2="12" y2="12"></line>
-        <line x1="12" y1="16" x2="12.01" y2="16"></line>
-      </svg>
+<main id="view-ended" class="relative h-[100dvh] w-full overflow-hidden bg-surface hidden flex-col scanline">
+  <header class="flex items-center justify-between px-3 md:px-6 h-9 md:h-11 border-b border-white/10 shrink-0">
+    <div class="flex items-center gap-2 md:gap-3">
+      <div class="flex items-center gap-1">
+        <span class="w-2 h-2 rounded-full bg-white/20"></span>
+        <span class="w-2 h-2 rounded-full bg-white/20"></span>
+        <span class="w-2 h-2 rounded-full bg-danger"></span>
+      </div>
+      <span class="hidden sm:inline text-white/30 text-[10px] md:text-xs">/usr/bin/meet/ended</span>
     </div>
-    <h1 id="ended-title" class="text-ink text-lg font-semibold tracking-tight mb-1.5">Session ended</h1>
-    <p id="ended-message" class="text-ink-dim text-sm mb-8 leading-relaxed">No one joined in time.</p>
-    <a href="/" class="inline-flex items-center justify-center gap-2 rounded-control bg-accent text-accent-ink h-11 px-6 font-medium text-sm hover:brightness-110 active:scale-[0.98] transition-[transform,filter] duration-150 ease-out-strong">
-      Start a new meeting
-    </a>
+  </header>
+
+  <div class="flex-1 flex items-center justify-center px-6">
+    <div class="w-full max-w-sm text-center">
+      <div class="w-10 h-10 mx-auto mb-5 rounded-full border border-white/15 flex items-center justify-center" aria-hidden="true">
+        <svg class="w-5 h-5 text-white/40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="10"></circle>
+          <line x1="12" y1="8" x2="12" y2="12"></line>
+          <line x1="12" y1="16" x2="12.01" y2="16"></line>
+        </svg>
+      </div>
+      <h1 id="ended-title" class="text-white text-base font-semibold tracking-tight mb-1.5">Session ended</h1>
+      <p id="ended-message" class="text-white/40 text-sm mb-8 leading-relaxed">No one joined in time.</p>
+      <a href="/" class="group inline-flex items-center justify-center gap-2 rounded-md border border-white/15 hover:border-accent h-11 px-6 text-sm text-white hover:text-accent transition-colors duration-150">
+        <span class="text-white/40 group-hover:text-accent">[</span>
+        <span>START A NEW MEETING</span>
+        <span class="text-white/40 group-hover:text-accent">]</span>
+      </a>
+    </div>
   </div>
 </main>
 
 <!-- ============================================================ -->
 <!-- FULL VIEW — room already has two peers                        -->
 <!-- ============================================================ -->
-<main id="view-full" class="relative min-h-[100dvh] w-full overflow-hidden bg-surface flex items-center justify-center px-6 hidden">
-  <div class="relative z-10 w-full max-w-sm text-center">
-    <div class="w-11 h-11 mx-auto mb-5 rounded-full bg-white/[0.06] flex items-center justify-center" aria-hidden="true">
-      <svg class="w-5 h-5 text-ink-dim" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-        <circle cx="9" cy="8" r="3"></circle>
-        <path d="M3 20c0-3.2 2.7-6 6-6s6 2.8 6 6"></path>
-        <circle cx="17" cy="8" r="2.4"></circle>
-        <path d="M15.5 14.2c2.6.5 4.5 2.8 4.5 5.8"></path>
-      </svg>
+<main id="view-full" class="relative h-[100dvh] w-full overflow-hidden bg-surface hidden flex-col scanline">
+  <header class="flex items-center justify-between px-3 md:px-6 h-9 md:h-11 border-b border-white/10 shrink-0">
+    <div class="flex items-center gap-2 md:gap-3">
+      <div class="flex items-center gap-1">
+        <span class="w-2 h-2 rounded-full bg-white/20"></span>
+        <span class="w-2 h-2 rounded-full bg-white/20"></span>
+        <span class="w-2 h-2 rounded-full bg-danger"></span>
+      </div>
+      <span class="hidden sm:inline text-white/30 text-[10px] md:text-xs">/usr/bin/meet/full</span>
     </div>
-    <h1 class="text-ink text-lg font-semibold tracking-tight mb-1.5">This meeting is full</h1>
-    <p class="text-ink-dim text-sm mb-8 leading-relaxed">Two people are already in this call. Start your own meeting instead.</p>
-    <button id="btn-new-from-full" type="button" class="inline-flex items-center justify-center gap-2 rounded-control bg-accent text-accent-ink h-11 px-6 font-medium text-sm hover:brightness-110 active:scale-[0.98] transition-[transform,filter] duration-150 ease-out-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/50 focus-visible:ring-offset-2 focus-visible:ring-offset-surface">
-      Start a new meeting
-    </button>
+  </header>
+
+  <div class="flex-1 flex items-center justify-center px-6">
+    <div class="w-full max-w-sm text-center">
+      <div class="w-10 h-10 mx-auto mb-5 rounded-full border border-white/15 flex items-center justify-center" aria-hidden="true">
+        <svg class="w-5 h-5 text-white/40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="9" cy="8" r="3"></circle>
+          <path d="M3 20c0-3.2 2.7-6 6-6s6 2.8 6 6"></path>
+          <circle cx="17" cy="8" r="2.4"></circle>
+          <path d="M15.5 14.2c2.6.5 4.5 2.8 4.5 5.8"></path>
+        </svg>
+      </div>
+      <h1 class="text-white text-base font-semibold tracking-tight mb-1.5">This meeting is full</h1>
+      <p class="text-white/40 text-sm mb-8 leading-relaxed">Two people are already in this call. Start your own meeting instead.</p>
+      <button id="btn-new-from-full" type="button" class="group inline-flex items-center justify-center gap-2 rounded-md border border-white/15 hover:border-accent h-11 px-6 text-sm text-white hover:text-accent transition-colors duration-150 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent/50">
+        <span class="text-white/40 group-hover:text-accent">[</span>
+        <span>START A NEW MEETING</span>
+        <span class="text-white/40 group-hover:text-accent">]</span>
+      </button>
+    </div>
   </div>
 </main>
 
 <!-- ============================================================ -->
 <!-- CALL VIEW — active 1:1 call, focus mode                        -->
 <!-- ============================================================ -->
-<main id="view-call" class="relative h-[100dvh] w-full overflow-hidden bg-surface hidden">
+<main id="view-call" class="relative h-[100dvh] w-full overflow-hidden bg-surface hidden flex-col scanline">
 
-  <video id="remote-video" class="absolute inset-0 w-full h-full object-cover z-0 bg-surface-raised" autoplay playsinline></video>
-  <div class="absolute inset-0 z-0 bg-gradient-to-t from-black/60 via-transparent to-black/40 pointer-events-none" aria-hidden="true"></div>
-
-  <header class="absolute top-0 inset-x-0 z-20 flex items-center justify-between px-4 sm:px-6 py-4">
-    <div class="flex items-center gap-2 rounded-pill bg-black/40 backdrop-blur-xl border border-white/10 pl-3 pr-3.5 py-2">
-      <span class="relative flex w-1.5 h-1.5" aria-hidden="true">
-        <span class="absolute inline-flex h-full w-full rounded-full bg-danger opacity-75 animate-ping"></span>
-        <span class="relative inline-flex rounded-full w-1.5 h-1.5 bg-danger"></span>
-      </span>
-      <span id="call-duration" class="text-ink text-xs font-mono tabular-nums" aria-label="Call duration">00:00</span>
+  <!-- Title bar -->
+  <header class="flex items-center justify-between px-3 md:px-6 h-9 md:h-11 border-b border-white/10 shrink-0 z-30">
+    <div class="flex items-center gap-2 md:gap-3">
+      <div class="flex items-center gap-1">
+        <span class="w-2 h-2 rounded-full bg-white/20"></span>
+        <span class="w-2 h-2 rounded-full bg-white/20"></span>
+        <span class="w-2 h-2 rounded-full bg-accent pulse-dot"></span>
+      </div>
+      <span class="hidden sm:inline text-white/30 text-[10px] md:text-xs">/usr/bin/meet</span>
     </div>
 
-    <div class="flex items-center gap-2">
-      <div id="quality-indicator" class="hidden items-center gap-1.5 rounded-pill bg-black/40 backdrop-blur-xl border border-white/10 pl-2.5 pr-3 py-2" role="status">
+    <div class="flex items-center gap-1.5 text-[10px] md:text-sm">
+      <span class="text-white/40">$</span>
+      <span class="text-white">room</span>
+      <span class="text-white/40 hidden sm:inline">--code</span>
+      <span id="call-room-code" class="text-accent font-semibold tracking-widest"></span>
+    </div>
+
+    <div class="flex items-center gap-2 md:gap-3">
+      <div id="quality-indicator" class="hidden items-center gap-1.5 text-[10px] md:text-xs text-white/40" role="status">
         <span id="quality-dot" class="w-1.5 h-1.5 rounded-full bg-amber-400" aria-hidden="true"></span>
-        <span id="quality-label" class="text-ink text-xs font-medium">Reconnecting…</span>
+        <span id="quality-label" class="font-mono">measuring…</span>
       </div>
-      <div class="rounded-pill bg-black/40 backdrop-blur-xl border border-white/10 px-3.5 py-2">
-        <span id="call-room-code" class="text-ink text-xs font-mono tracking-[0.2em] uppercase"></span>
+      <div class="flex items-center gap-1.5 md:gap-2 text-[10px] md:text-xs text-white/40">
+        <span class="w-1.5 h-1.5 rounded-full bg-accent"></span>
+        <span class="hidden md:inline">connected</span>
+        <span id="call-duration" class="text-white/70" aria-label="Call duration">00:00</span>
       </div>
     </div>
   </header>
 
-  <div
-    class="absolute z-30 top-[4.5rem] right-4 sm:top-20 sm:right-6 w-24 h-32 sm:w-32 sm:h-44 rounded-panel overflow-hidden ring-1 ring-white/15 shadow-[0_8px_24px_rgba(0,0,0,0.4)] transition-transform duration-200 ease-out-strong hover:scale-[1.02]"
-    role="img" aria-label="Your camera preview">
-    <video id="local-video" class="absolute inset-0 w-full h-full object-cover bg-surface-raised -scale-x-100" autoplay muted playsinline></video>
-  </div>
+  <!-- Main stage -->
+  <main class="relative flex-1 min-h-0">
 
-  <div class="absolute bottom-0 inset-x-0 z-20 flex justify-center px-4 pb-6 sm:pb-8">
-    <div class="flex items-center justify-center gap-2 rounded-pill bg-black/40 backdrop-blur-2xl border border-white/10 px-3 py-3 shadow-[0_8px_32px_rgba(0,0,0,0.5)]">
+    <!-- Peer view -->
+    <section class="absolute inset-0 flex flex-col overflow-hidden">
+      <div class="flex items-center justify-between px-3 md:px-4 h-7 md:h-8 border-b border-white/10 bg-black/70 backdrop-blur-sm shrink-0 z-10">
+        <div class="flex items-center gap-2 text-[10px] md:text-xs text-white/50">
+          <span class="w-1.5 h-1.5 rounded-full bg-accent pulse-dot"></span>
+          <span>peer@meet</span>
+        </div>
+        <span id="peer-status-badge" class="text-[9px] md:text-[10px] text-white/30 tracking-wider hidden sm:inline"></span>
+      </div>
+      <div class="flex-1 min-h-0 bg-surface-raised relative">
+        <video id="remote-video" class="absolute inset-0 w-full h-full object-cover" autoplay playsinline></video>
+        <div class="absolute top-2 md:top-3 left-2 md:left-3 flex items-center gap-1.5 text-[9px] md:text-xs text-white/40 bg-black/60 border border-white/10 rounded px-2 py-1">
+          <span class="w-1.5 h-1.5 rounded-full bg-accent pulse-dot"></span>
+          LIVE
+        </div>
+      </div>
+    </section>
+
+    <!-- Floating self-view (PiP) -->
+    <div class="absolute bottom-3 right-3 md:bottom-5 md:right-5 w-[120px] sm:w-[160px] md:w-[200px] border border-accent rounded-lg overflow-hidden flex flex-col bg-black z-20 shadow-[0_8px_24px_rgba(0,0,0,0.6)]">
+      <div class="flex items-center justify-between px-2 h-6 border-b border-white/10 bg-white/[0.04] shrink-0">
+        <span class="text-[9px] md:text-[10px] text-white/60">you@meet</span>
+        <span class="w-1.5 h-1.5 rounded-full bg-accent"></span>
+      </div>
+      <div class="flex-1 aspect-[4/3] relative bg-surface-raised">
+        <video id="local-video" class="absolute inset-0 w-full h-full object-cover -scale-x-100" autoplay muted playsinline></video>
+      </div>
+    </div>
+
+  </main>
+
+  <!-- Control bar -->
+  <footer class="border-t border-white/10 px-3 md:px-6 py-2 md:py-3 shrink-0 relative z-30">
+    <div class="flex items-center justify-center gap-1.5 md:gap-2 flex-wrap">
 
       <button id="btn-toggle-mic" type="button" aria-label="Mute microphone" aria-pressed="false"
-        class="flex items-center justify-center w-12 h-12 rounded-full bg-white/10 text-ink hover:bg-white/[0.16] active:scale-[0.95] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/40 transition-[transform,background-color] duration-150 ease-out-strong">
-        <svg id="icon-mic-on" class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        class="group flex items-center gap-1.5 px-3 md:px-4 py-2 rounded-md border border-white/15 hover:border-accent transition-colors text-[10px] md:text-xs text-white hover:text-accent">
+        <span class="text-white/40 group-hover:text-accent">[</span>
+        <svg id="icon-mic-on" class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
           <rect x="9" y="2" width="6" height="12" rx="3"></rect>
           <path d="M5 10a7 7 0 0 0 14 0"></path>
           <line x1="12" y1="19" x2="12" y2="22"></line>
           <line x1="8" y1="22" x2="16" y2="22"></line>
         </svg>
-        <svg id="icon-mic-off" class="w-5 h-5 hidden" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <svg id="icon-mic-off" class="w-3.5 h-3.5 hidden" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
           <path d="M9 9v3a3 3 0 0 0 5.12 2.12"></path>
           <path d="M12.9 4.16A3 3 0 0 1 15 7v2"></path>
           <path d="M5 10a7 7 0 0 0 10.54 6.04"></path>
@@ -179,67 +276,67 @@
           <line x1="8" y1="22" x2="16" y2="22"></line>
           <line x1="2" y1="2" x2="22" y2="22"></line>
         </svg>
+        <span>MIC</span>
+        <span class="text-white/40 group-hover:text-accent">]</span>
       </button>
 
       <button id="btn-toggle-camera" type="button" aria-label="Turn off camera" aria-pressed="false"
-        class="flex items-center justify-center w-12 h-12 rounded-full bg-white/10 text-ink hover:bg-white/[0.16] active:scale-[0.95] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/40 transition-[transform,background-color] duration-150 ease-out-strong">
-        <svg id="icon-camera-on" class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        class="group flex items-center gap-1.5 px-3 md:px-4 py-2 rounded-md border border-white/15 hover:border-accent transition-colors text-[10px] md:text-xs text-white hover:text-accent">
+        <span class="text-white/40 group-hover:text-accent">[</span>
+        <svg id="icon-camera-on" class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
           <rect x="2" y="6" width="14" height="12" rx="3"></rect>
           <path d="M16 10l6-4v12l-6-4"></path>
         </svg>
-        <svg id="icon-camera-off" class="w-5 h-5 hidden" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <svg id="icon-camera-off" class="w-3.5 h-3.5 hidden" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
           <path d="M16 16.3V18a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h1.7"></path>
           <path d="M9.5 6H14a2 2 0 0 1 2 2v4.5"></path>
           <path d="M22 8v8l-6-4z"></path>
           <line x1="2" y1="2" x2="22" y2="22"></line>
         </svg>
+        <span>CAM</span>
+        <span class="text-white/40 group-hover:text-accent">]</span>
       </button>
 
       <button id="btn-toggle-share" type="button" aria-label="Share your screen" aria-pressed="false"
-        class="flex items-center justify-center w-12 h-12 rounded-full bg-white/10 text-ink hover:bg-white/[0.16] active:scale-[0.95] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/40 transition-[transform,background-color] duration-150 ease-out-strong">
-        <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-          <rect x="2" y="4" width="20" height="13" rx="2"></rect>
-          <line x1="8" y1="21" x2="16" y2="21"></line>
-          <line x1="12" y1="17" x2="12" y2="21"></line>
-          <path d="M9 10l3-3 3 3"></path>
-          <path d="M12 7v6"></path>
-        </svg>
+        class="group flex items-center gap-1.5 px-3 md:px-4 py-2 rounded-md border border-white/15 hover:border-accent transition-colors text-[10px] md:text-xs text-white hover:text-accent">
+        <span class="text-white/40 group-hover:text-accent">[</span>
+        <span>SHARE</span>
+        <span class="text-white/40 group-hover:text-accent">]</span>
       </button>
 
       <button id="btn-toggle-pip" type="button" aria-label="Picture in picture" aria-pressed="false" hidden
-        class="flex items-center justify-center w-12 h-12 rounded-full bg-white/10 text-ink hover:bg-white/[0.16] active:scale-[0.95] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/40 transition-[transform,background-color] duration-150 ease-out-strong">
-        <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-          <rect x="2" y="4" width="20" height="16" rx="2"></rect>
-          <rect x="11" y="11" width="8" height="6" rx="1" fill="currentColor"></rect>
-        </svg>
+        class="group flex items-center gap-1.5 px-3 md:px-4 py-2 rounded-md border border-white/15 hover:border-accent transition-colors text-[10px] md:text-xs text-white hover:text-accent">
+        <span class="text-white/40 group-hover:text-accent">[</span>
+        <span>PIP</span>
+        <span class="text-white/40 group-hover:text-accent">]</span>
       </button>
 
       <div class="relative">
         <button id="btn-toggle-devices" type="button" aria-label="Choose camera and microphone" aria-pressed="false" aria-expanded="false"
-          class="flex items-center justify-center w-12 h-12 rounded-full bg-white/10 text-ink hover:bg-white/[0.16] active:scale-[0.95] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/40 transition-[transform,background-color] duration-150 ease-out-strong">
-          <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <circle cx="12" cy="12" r="3"></circle>
-            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
-          </svg>
+          class="group flex items-center gap-1.5 px-3 md:px-4 py-2 rounded-md border border-white/15 hover:border-accent transition-colors text-[10px] md:text-xs text-white hover:text-accent">
+          <span class="text-white/40 group-hover:text-accent">[</span>
+          <span>DEVICES</span>
+          <span class="text-white/40 group-hover:text-accent">]</span>
         </button>
 
-        <div id="device-picker" class="hidden absolute bottom-full right-0 mb-3 w-64 rounded-panel bg-surface-raised border border-white/10 shadow-[0_16px_40px_rgba(0,0,0,0.5)] p-3">
-          <label for="select-camera" class="block text-ink-dim text-xs font-medium mb-1.5">Camera</label>
-          <select id="select-camera" class="w-full rounded-control bg-white/[0.06] border border-white/10 text-ink text-sm px-2.5 py-2 mb-3 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40"></select>
-          <label for="select-microphone" class="block text-ink-dim text-xs font-medium mb-1.5">Microphone</label>
-          <select id="select-microphone" class="w-full rounded-control bg-white/[0.06] border border-white/10 text-ink text-sm px-2.5 py-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40"></select>
+        <div id="device-picker" class="hidden absolute bottom-full right-0 mb-3 w-64 rounded-md bg-black border border-white/15 shadow-[0_16px_40px_rgba(0,0,0,0.6)] p-3">
+          <label for="select-camera" class="block text-white/40 text-[10px] mb-1.5"># camera</label>
+          <select id="select-camera" class="w-full rounded-md bg-black border border-white/15 text-white text-xs font-mono px-2.5 py-2 mb-3 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent/40"></select>
+          <label for="select-microphone" class="block text-white/40 text-[10px] mb-1.5"># microphone</label>
+          <select id="select-microphone" class="w-full rounded-md bg-black border border-white/15 text-white text-xs font-mono px-2.5 py-2 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent/40"></select>
         </div>
       </div>
 
       <button id="btn-end-call" type="button" aria-label="End call"
-        class="flex items-center justify-center w-14 h-12 rounded-full bg-danger text-white hover:brightness-110 active:scale-[0.95] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-danger/50 transition-[transform,filter] duration-150 ease-out-strong">
-        <svg class="w-5 h-5 rotate-135" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-          <path d="M6.6 10.8c1.4 2.8 3.8 5.2 6.6 6.6l2.2-2.2c.3-.3.7-.4 1-.2 1.1.4 2.3.6 3.6.6.6 0 1 .4 1 1V20c0 .6-.4 1-1 1C10.6 21 3 13.4 3 4c0-.6.4-1 1-1h3.4c.6 0 1 .4 1 1 0 1.3.2 2.5.6 3.6.1.4 0 .8-.3 1.1L6.6 10.8z"></path>
-        </svg>
+        class="flex items-center gap-1.5 px-3 md:px-4 py-2 rounded-md border border-red-400/40 text-red-400 hover:bg-red-400 hover:text-black transition-colors text-[10px] md:text-xs">
+        <span>[</span>
+        <span>LEAVE</span>
+        <span>]</span>
       </button>
 
     </div>
-  </div>
+    <p class="text-center text-[9px] md:text-[10px] text-white/25 mt-2" id="call-footer-note">peer-to-peer · no media touches server</p>
+  </footer>
 
 </main>
 

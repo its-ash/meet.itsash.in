@@ -19,6 +19,7 @@ import {
   setLocalPreview,
   setLocalVideoStream,
   setNetworkIndicator,
+  setPeerStatusBadge,
   setPipButtonState,
   setReconnectingIndicator,
   setRemoteVideoStream,
@@ -33,6 +34,7 @@ const pipSupported =
   typeof document !== "undefined" && ("pictureInPictureEnabled" in document || "documentPictureInPicture" in window);
 
 let activeSession: CallSession | null = null;
+let lastResolution: { width: number; height: number } | null = null;
 
 function currentRoomIdFromPath(): string | null {
   const stored = sessionStorage.getItem("meet:redirect-path");
@@ -89,6 +91,13 @@ function handleCallEvent(event: CallEvent): void {
       break;
     case "network-stats":
       setNetworkIndicator(event.stats.level, event.stats.downloadKbps, event.stats.uploadKbps);
+      if (lastResolution) {
+        setPeerStatusBadge(lastResolution.width, lastResolution.height, event.stats.transport);
+      }
+      break;
+    case "video-resolution":
+      lastResolution = { width: event.width, height: event.height };
+      setPeerStatusBadge(event.width, event.height, null);
       break;
     case "discarded":
       stopCallDurationTimer();

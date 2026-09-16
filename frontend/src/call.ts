@@ -5,6 +5,7 @@ import {
   applyCodecPreferences,
   createPeerConnection,
   getLocalStream,
+  getOutgoingVideoResolution,
   getScreenStream,
   pollConnectionQuality,
   type NetworkStats,
@@ -21,6 +22,7 @@ export type CallEvent =
   | { type: "reconnecting" }
   | { type: "failed"; reason: string }
   | { type: "network-stats"; stats: NetworkStats }
+  | { type: "video-resolution"; width: number; height: number }
   | { type: "local-stream"; stream: MediaStream }
   | { type: "remote-stream"; stream: MediaStream }
   | { type: "screen-share-started" }
@@ -101,6 +103,13 @@ export class CallSession {
     };
   }
 
+  private emitVideoResolution(): void {
+    const resolution = getOutgoingVideoResolution(this.videoSender);
+    if (resolution) {
+      this.onEvent({ type: "video-resolution", width: resolution.width, height: resolution.height });
+    }
+  }
+
   private handleIceStateChange(): void {
     const state = this.pc?.iceConnectionState;
 
@@ -109,6 +118,7 @@ export class CallSession {
       this.reconnecting = false;
       this.session?.mark_connected();
       this.onEvent({ type: "connected" });
+      this.emitVideoResolution();
       this.stopQualityPoll?.();
       this.stopQualityPoll = pollConnectionQuality(
         this.pc!,
@@ -289,6 +299,7 @@ export class CallSession {
       track.stop();
     }
 
+    this.emitVideoResolution();
     return newStream;
   }
 
@@ -302,6 +313,7 @@ export class CallSession {
 
     screenTrack.onended = () => void this.stopScreenShare();
     this.onEvent({ type: "screen-share-started" });
+    this.emitVideoResolution();
   }
 
   async stopScreenShare(): Promise<void> {
@@ -314,6 +326,7 @@ export class CallSession {
     const cameraTrack = this.localStream?.getVideoTracks()[0] ?? null;
     await this.videoSender?.replaceTrack(cameraTrack);
     this.onEvent({ type: "screen-share-stopped" });
+    this.emitVideoResolution();
   }
 
   stop(): void {
