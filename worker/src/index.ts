@@ -22,6 +22,17 @@ function corsHeaders(origin: string | null): HeadersInit {
   };
 }
 
+function json(body: unknown, origin: string | null, status = 200): Response {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { "Content-Type": "application/json", ...corsHeaders(origin) },
+  });
+}
+
+function text(body: string, origin: string | null, status: number): Response {
+  return new Response(body, { status, headers: corsHeaders(origin) });
+}
+
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
@@ -34,19 +45,11 @@ export default {
     if (url.pathname === "/new-room" && request.method === "GET") {
       for (let attempt = 0; attempt < 10; attempt++) {
         const candidate = randomRoomId();
-        const id = env.ROOM.idFromName(candidate);
-        const stub = env.ROOM.get(id);
-        const sockets = await stub.getWebSocketCount?.().catch(() => 0);
-        if (!sockets) {
-          return new Response(JSON.stringify({ roomId: candidate }), {
-            headers: { "Content-Type": "application/json", ...corsHeaders(origin) },
-          });
-        }
+        const stub = env.ROOM.get(env.ROOM.idFromName(candidate));
+        const reserved = await stub.reserve().catch(() => false);
+        if (reserved) return json({ roomId: candidate }, origin);
       }
-      return new Response(JSON.stringify({ error: "could not allocate room" }), {
-        status: 503,
-        headers: { "Content-Type": "application/json", ...corsHeaders(origin) },
-      });
+      return json({ error: "could not allocate room" }, origin, 503);
     }
 
     if (url.pathname === "/turn-credentials" && request.method === "GET") {
@@ -89,28 +92,21 @@ export default {
     const statusMatch = url.pathname.match(/^\/room-status\/([^/]+)$/);
     if (statusMatch && request.method === "GET") {
       const roomId = statusMatch[1];
-      if (!ROOM_ID_RE.test(roomId)) {
-        return new Response("invalid room id", { status: 400 });
-      }
-      const id = env.ROOM.idFromName(roomId.toLowerCase());
-      const stub = env.ROOM.get(id);
+      if (!ROOM_ID_RE.test(roomId)) return text("invalid room id", origin, 400);
+      const stub = env.ROOM.get(env.ROOM.idFromName(roomId.toLowerCase()));
       const count = await stub.getWebSocketCount();
-      return new Response(JSON.stringify({ count }), {
-        headers: { "Content-Type": "application/json", ...corsHeaders(origin) },
-      });
+      return json({ count }, origin);
     }
 
     const match = url.pathname.match(/^\/ws\/([^/]+)$/);
     if (match) {
       const roomId = match[1];
-      if (!ROOM_ID_RE.test(roomId)) {
-        return new Response("invalid room id", { status: 400 });
-      }
+      if (!ROOM_ID_RE.test(roomId)) return text("invalid room id", origin, 400);
       const id = env.ROOM.idFromName(roomId.toLowerCase());
       const stub = env.ROOM.get(id);
       return stub.fetch(request);
     }
 
-    return new Response("not found", { status: 404 });
+    return text("not found", origin, 404);
   },
 } satisfies ExportedHandler<Env>;

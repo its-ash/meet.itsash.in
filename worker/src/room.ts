@@ -3,9 +3,12 @@ import { DurableObject } from "cloudflare:workers";
 const HEARTBEAT_THRESHOLD_MS = 5000;
 const SWEEP_INTERVAL_MS = 2000;
 const STALE_CLOSE_CODE = 4000;
+const RESERVATION_TTL_MS = 60_000;
+const RESERVED_AT_KEY = "reservedAt";
 
 interface SocketAttachment {
   lastPingMs: number;
+  evicted?: boolean;
 }
 
 export interface Env {
@@ -16,7 +19,19 @@ export interface Env {
 
 export class RoomSignal extends DurableObject<Env> {
   async getWebSocketCount(): Promise<number> {
-    return this.ctx.getWebSockets().length;
+    return this.liveSockets().length;
+  }
+
+  // Claims this room code for a freshly created meeting so a concurrent
+  // /new-room call can't hand the same code to someone else before the host
+  // connects. Storage ops hold the DO's input gate, so get+put is atomic.
+  async reserve(): Promise<boolean> {
+    if (this.liveSockets().length > 0) return false;
+    const reservedAt = await this.ctx.storage.get<number>(RESERVED_AT_KEY);
+    const now = Date.now();
+    if (reservedAt !== undefined && now - reservedAt < RESERVATION_TTL_MS) return false;
+    await this.ctx.storage.put(RESERVED_AT_KEY, now);
+    return true;
   }
 
   async fetch(request: Request): Promise<Response> {
@@ -28,12 +43,8 @@ export class RoomSignal extends DurableObject<Env> {
     // stale socket behind with no clean close event. Reclaim any socket
     // that's past the heartbeat threshold before judging the room full,
     // rather than waiting for the next alarm sweep to get around to it.
-    // Count live sockets directly (rather than re-reading getWebSockets()
-    // right after close()) so this doesn't depend on how quickly a closed
-    // socket is removed from that list.
-    const evicted = this.evictStaleSockets();
-    const liveCount = this.ctx.getWebSockets().length - evicted.length;
-    if (liveCount >= 2) {
+    this.evictStaleSockets();
+    if (this.liveSockets().length >= 2) {
       return new Response("room full", { status: 409 });
     }
 
@@ -42,9 +53,9 @@ export class RoomSignal extends DurableObject<Env> {
 
     this.ctx.acceptWebSocket(server);
     this.touch(server);
+    await this.ctx.storage.delete(RESERVED_AT_KEY);
 
-    const evictedSet = new Set(evicted);
-    const allSockets = this.ctx.getWebSockets().filter((s) => !evictedSet.has(s));
+    const allSockets = this.liveSockets();
     const nowPaired = allSockets.length === 2;
     if (nowPaired) {
       // The socket that was already here (not the one that just connected)
@@ -53,8 +64,8 @@ export class RoomSignal extends DurableObject<Env> {
       // second setRemoteDescription fails because the connection is no
       // longer in the expected signaling state.
       const existing = allSockets.find((s) => s !== server);
-      existing?.send(JSON.stringify({ type: "peer-joined", role: "offerer" }));
-      server.send(JSON.stringify({ type: "peer-joined", role: "answerer" }));
+      if (existing) this.safeSend(existing, JSON.stringify({ type: "peer-joined", role: "offerer" }));
+      this.safeSend(server, JSON.stringify({ type: "peer-joined", role: "answerer" }));
     }
 
     await this.scheduleSweep();
@@ -68,17 +79,23 @@ export class RoomSignal extends DurableObject<Env> {
       return;
     }
 
-    const sockets = this.ctx.getWebSockets();
+    const sockets = this.liveSockets();
     if (sockets.length < 2) return;
 
     for (const socket of sockets) {
-      if (socket !== ws) {
-        socket.send(message);
-      }
+      if (socket !== ws) this.safeSend(socket, message);
     }
   }
 
-  async webSocketClose(ws: WebSocket): Promise<void> {
+  async webSocketClose(ws: WebSocket, code: number, reason: string): Promise<void> {
+    // Complete the close handshake — without the auto-reply compat flag the
+    // runtime leaves the socket half-open until we reciprocate. 1005/1006
+    // are reserved "no status" codes that can't be sent on the wire.
+    try {
+      ws.close(code === 1005 || code === 1006 ? 1000 : code, reason);
+    } catch {
+      // Already closed.
+    }
     await this.handlePeerGone(ws);
   }
 
@@ -87,44 +104,81 @@ export class RoomSignal extends DurableObject<Env> {
   }
 
   private async handlePeerGone(ws: WebSocket): Promise<void> {
-    const remaining = this.ctx.getWebSockets().filter((s) => s !== ws);
+    const remaining = this.liveSockets().filter((s) => s !== ws);
     if (remaining.length === 0) {
       await this.ctx.storage.deleteAlarm();
       return;
     }
-    for (const socket of remaining) {
-      socket.send(JSON.stringify({ type: "peer-left" }));
-    }
+    // An evicted socket's survivor was already notified at eviction time; a
+    // late close event for it must not tear down a newer pairing.
+    const attachment = this.readAttachment(ws);
+    if (attachment?.evicted) return;
+    this.notifyPeerLeft(remaining);
   }
 
   async alarm(): Promise<void> {
-    const evicted = this.evictStaleSockets();
-    const liveCount = this.ctx.getWebSockets().length - evicted.length;
+    this.evictStaleSockets();
 
-    if (liveCount > 0) {
+    if (this.liveSockets().length > 0) {
       await this.scheduleSweep();
     } else {
       await this.ctx.storage.deleteAlarm();
     }
   }
 
-  private evictStaleSockets(): WebSocket[] {
+  // Dead peers (network switch, lid closed) never send a close frame, so
+  // webSocketClose won't fire for them — the survivor is told here instead.
+  private evictStaleSockets(): void {
     const now = Date.now();
-    const evicted: WebSocket[] = [];
-    for (const socket of this.ctx.getWebSockets()) {
-      const attachment = socket.deserializeAttachment() as SocketAttachment | null;
+    let evictedAny = false;
+    for (const socket of this.liveSockets()) {
+      const attachment = this.readAttachment(socket);
       const lastPingMs = attachment?.lastPingMs ?? now;
-      if (now - lastPingMs >= HEARTBEAT_THRESHOLD_MS) {
+      if (now - lastPingMs < HEARTBEAT_THRESHOLD_MS) continue;
+      try {
+        socket.serializeAttachment({ lastPingMs, evicted: true } satisfies SocketAttachment);
         socket.close(STALE_CLOSE_CODE, "stale-connection");
-        evicted.push(socket);
+      } catch {
+        // Socket already torn down by the runtime.
       }
+      evictedAny = true;
     }
-    return evicted;
+    if (evictedAny) this.notifyPeerLeft(this.liveSockets());
+  }
+
+  private liveSockets(): WebSocket[] {
+    return this.ctx
+      .getWebSockets()
+      .filter((s) => s.readyState === WebSocket.OPEN && !this.readAttachment(s)?.evicted);
+  }
+
+  private readAttachment(ws: WebSocket): SocketAttachment | null {
+    try {
+      return ws.deserializeAttachment() as SocketAttachment | null;
+    } catch {
+      return null;
+    }
+  }
+
+  private notifyPeerLeft(sockets: WebSocket[]): void {
+    const msg = JSON.stringify({ type: "peer-left" });
+    for (const socket of sockets) this.safeSend(socket, msg);
+  }
+
+  private safeSend(ws: WebSocket, data: string | ArrayBuffer): void {
+    try {
+      ws.send(data);
+    } catch {
+      // Peer vanished mid-send; the heartbeat sweep will clean it up.
+    }
   }
 
   private touch(ws: WebSocket): void {
-    const attachment: SocketAttachment = { lastPingMs: Date.now() };
-    ws.serializeAttachment(attachment);
+    try {
+      ws.serializeAttachment({ lastPingMs: Date.now() } satisfies SocketAttachment);
+    } catch {
+      // Socket closed between receipt and touch.
+    }
   }
 
   private isPing(message: string): boolean {
