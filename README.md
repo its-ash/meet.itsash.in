@@ -2,7 +2,9 @@
 
 Anonymous, room-code-based, peer-to-peer (WebRTC) video meeting. No accounts, no installs, no media servers — audio and video flow directly between two browsers via WebRTC. A Cloudflare Worker + Durable Object only relays the signaling handshake (and, when configured, mints short-lived TURN credentials).
 
-**Live:** `meet.itsash.in`
+**Live:** [meet.itsash.in](https://meet.itsash.in)
+
+![Meet: video calls, the simple way](image.png)
 
 ## How it works
 

@@ -82,10 +82,8 @@ function setToggleVisualState(
 ): void {
   onIcon.classList.toggle("hidden", active);
   offIcon.classList.toggle("hidden", !active);
-  btn.classList.toggle("border-danger", active);
-  btn.classList.toggle("text-danger", active);
-  btn.classList.toggle("border-white/15", !active);
-  btn.classList.toggle("text-white", !active);
+  btn.classList.toggle("bg-danger", active);
+  btn.classList.toggle("hover:bg-white/10", !active);
 }
 
 export function bindMicToggle(onToggle: (enabled: boolean) => void): void {
@@ -127,8 +125,13 @@ export function bindStartNewFromFull(onStart: () => void): void {
 export function bindCopyLink(): void {
   document.getElementById("btn-copy-link")?.addEventListener("click", async () => {
     const text = document.getElementById("room-link")?.textContent ?? "";
+    const label = document.getElementById("copy-label");
     try {
       await navigator.clipboard.writeText(text);
+      if (label) {
+        label.textContent = "Copied";
+        window.setTimeout(() => (label.textContent = "Copy"), 1600);
+      }
     } catch {
       // Clipboard API unavailable — link is still selectable text.
     }
@@ -138,10 +141,10 @@ export function bindCopyLink(): void {
 type QualityState = "reconnecting" | "fair" | "poor" | "good";
 
 const QUALITY_DOT_CLASS: Record<QualityState, string> = {
-  reconnecting: "bg-amber-400",
-  fair: "bg-amber-400",
+  reconnecting: "bg-amber-500",
+  fair: "bg-amber-500",
   poor: "bg-danger",
-  good: "bg-emerald-400",
+  good: "bg-live",
 };
 
 function formatKbps(kbps: number): string {
@@ -197,10 +200,7 @@ export function setShareButtonState(sharing: boolean): void {
   const btn = document.getElementById("btn-toggle-share") as HTMLButtonElement;
   btn.setAttribute("aria-pressed", String(sharing));
   btn.setAttribute("aria-label", sharing ? "Stop sharing your screen" : "Share your screen");
-  btn.classList.toggle("border-accent", sharing);
-  btn.classList.toggle("text-accent", sharing);
-  btn.classList.toggle("border-white/15", !sharing);
-  btn.classList.toggle("text-white", !sharing);
+  setBarButtonActive(btn, sharing);
 }
 
 export function bindPipToggle(onToggle: () => void): void {
@@ -212,6 +212,14 @@ export function bindPipToggle(onToggle: () => void): void {
 export function setPipButtonState(active: boolean): void {
   const btn = document.getElementById("btn-toggle-pip") as HTMLButtonElement;
   btn.setAttribute("aria-pressed", String(active));
+  setBarButtonActive(btn, active);
+}
+
+function setBarButtonActive(btn: HTMLElement, active: boolean): void {
+  btn.classList.toggle("bg-paper", active);
+  btn.classList.toggle("text-ink", active);
+  btn.classList.toggle("text-paper", !active);
+  btn.classList.toggle("hover:bg-white/10", !active);
 }
 
 export function bindDevicePicker(onOpen: () => void): { close: () => void } {
@@ -252,12 +260,8 @@ export function populateDeviceSelects(
   const cameraSelect = document.getElementById("select-camera") as HTMLSelectElement;
   const micSelect = document.getElementById("select-microphone") as HTMLSelectElement;
 
-  cameraSelect.innerHTML = cameras
-    .map((d) => `<option value="${d.deviceId}">${d.label}</option>`)
-    .join("");
-  micSelect.innerHTML = microphones
-    .map((d) => `<option value="${d.deviceId}">${d.label}</option>`)
-    .join("");
+  cameraSelect.replaceChildren(...cameras.map((d) => new Option(d.label, d.deviceId)));
+  micSelect.replaceChildren(...microphones.map((d) => new Option(d.label, d.deviceId)));
 
   cameraSelect.onchange = () => onCameraChange(cameraSelect.value);
   micSelect.onchange = () => onMicChange(micSelect.value);
