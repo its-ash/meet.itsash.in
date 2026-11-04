@@ -1,0 +1,23 @@
+{
+  "id": "/",
+  "name": "Meet — private calls for two",
+  "short_name": "Meet",
+  "description": "Private peer-to-peer calls for two. No account. No download.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "display_override": ["window-controls-overlay", "standalone"],
+  "orientation": "any",
+  "background_color": "#f4f3ee",
+  "theme_color": "#121212",
+  "categories": ["communication", "social"],
+  "icons": [
+    { "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" },
+    { "src": "/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ],
+  "shortcuts": [
+    { "name": "New meeting", "short_name": "New", "url": "/?new=1", "icons": [{ "src": "/icon-192.png", "sizes": "192x192" }] }
+  ]
+}

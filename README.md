@@ -12,12 +12,13 @@ Anonymous, room-code-based, peer-to-peer (WebRTC) video meeting. No accounts, no
 2. Guest enters the code (or opens the link) → the two peers connect to the same Cloudflare Durable Object room over WebSocket.
 3. The Worker relays SDP offer/answer and ICE candidates between the two peers.
 4. Once signaling completes, the browsers establish a direct WebRTC `RTCPeerConnection` — STUN by default, with an automatic TURN relay fallback (Cloudflare Realtime TURN) for restrictive/symmetric NATs. Media never touches the Worker.
-5. Each connected peer sends a heartbeat ping every 2s; a Durable Object alarm sweeps every 2s and evicts any peer whose last ping is ≥5s old. There's no fixed "waiting" timeout — a host waits indefinitely for a guest to join, and a room's two slots are only freed by this heartbeat sweep (e.g. a crashed tab or dropped network), or immediately on a clean disconnect.
+5. Each connected peer sends a heartbeat ping every 2s; a Durable Object alarm sweeps every 2s and evicts any peer idle for ≥10s. A refreshed tab replaces its own old connection at once, and a new visitor takes over any idle slot. Dropped signaling sockets reconnect automatically. There's no fixed "waiting" timeout — a host waits indefinitely for a guest to join, and a room's two slots are only freed by this heartbeat sweep (e.g. a crashed tab or dropped network), or immediately on a clean disconnect.
 6. If a guest disconnects cleanly, the host is notified live and returns to the waiting view rather than the call ending — the room stays open for a reconnect.
 7. A third visitor to an occupied room sees a "meeting is full" screen with a one-tap way to start their own meeting.
 
 ## Call features
 
+- **Audio-first** — a call starts with microphone only. Camera and screen share each ask for their own permission when the user turns them on, and switch in via `replaceTrack` (no renegotiation).
 - **Codec preference** — AV1 → VP9 → H264 → VP8 for video, Opus for audio, negotiated via `setCodecPreferences` where supported.
 - **TURN fallback** — the Worker mints short-lived Cloudflare Realtime TURN credentials on request; the client falls back to STUN-only if TURN isn't configured or the request fails.
 - **ICE reconnect** — a brief `disconnected` ICE state triggers an automatic `iceRestart` before the call is considered failed, recovering from transient network drops without ending the call.

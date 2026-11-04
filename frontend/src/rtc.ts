@@ -18,7 +18,7 @@ export function applyCodecPreferences(pc: RTCPeerConnection): void {
   if (typeof RTCRtpSender.getCapabilities !== "function") return;
 
   for (const transceiver of pc.getTransceivers()) {
-    const kind = transceiver.sender.track?.kind as "video" | "audio" | undefined;
+    const kind = (transceiver.sender.track?.kind ?? transceiver.receiver.track?.kind) as "video" | "audio" | undefined;
     if (!kind || typeof transceiver.setCodecPreferences !== "function") continue;
 
     const capabilities = RTCRtpSender.getCapabilities(kind);
@@ -39,8 +39,19 @@ export interface DeviceConstraints {
   audioDeviceId?: string;
 }
 
-export async function getLocalStream(constraints: DeviceConstraints = {}): Promise<MediaStream> {
+export async function getMicStream(audioDeviceId?: string): Promise<MediaStream> {
   return navigator.mediaDevices.getUserMedia({
+    audio: {
+      echoCancellation: true,
+      noiseSuppression: true,
+      autoGainControl: true,
+      ...(audioDeviceId ? { deviceId: { exact: audioDeviceId } } : {}),
+    },
+  });
+}
+
+export async function getCameraTrack(videoDeviceId?: string): Promise<MediaStreamTrack> {
+  const stream = await navigator.mediaDevices.getUserMedia({
     video: {
       // Ideal, not exact: lets the browser pick the sensor's natural
       // portrait/landscape shape (important on mobile) instead of forcing
@@ -50,15 +61,10 @@ export async function getLocalStream(constraints: DeviceConstraints = {}): Promi
       height: { ideal: 720 },
       aspectRatio: { ideal: window.innerWidth / window.innerHeight },
       frameRate: { ideal: 30 },
-      ...(constraints.videoDeviceId ? { deviceId: { exact: constraints.videoDeviceId } } : {}),
-    },
-    audio: {
-      echoCancellation: true,
-      noiseSuppression: true,
-      autoGainControl: true,
-      ...(constraints.audioDeviceId ? { deviceId: { exact: constraints.audioDeviceId } } : {}),
+      ...(videoDeviceId ? { deviceId: { exact: videoDeviceId } } : {}),
     },
   });
+  return stream.getVideoTracks()[0];
 }
 
 export async function getScreenStream(): Promise<MediaStream> {

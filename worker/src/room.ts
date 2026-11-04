@@ -1,14 +1,21 @@
 import { DurableObject } from "cloudflare:workers";
 
-const HEARTBEAT_THRESHOLD_MS = 5000;
+const IDLE_THRESHOLD_MS = 10_000;
 const SWEEP_INTERVAL_MS = 2000;
 const STALE_CLOSE_CODE = 4000;
+const REPLACED_CLOSE_CODE = 4001;
 const RESERVATION_TTL_MS = 60_000;
 const RESERVED_AT_KEY = "reservedAt";
+const SID_RE = /^[a-z0-9-]{8,64}$/i;
 
 interface SocketAttachment {
   lastPingMs: number;
+  sid: string | null;
   evicted?: boolean;
+}
+
+export function parseSid(raw: string | null): string | null {
+  return raw && SID_RE.test(raw) ? raw : null;
 }
 
 export interface Env {
@@ -18,8 +25,12 @@ export interface Env {
 }
 
 export class RoomSignal extends DurableObject<Env> {
-  async getWebSocketCount(): Promise<number> {
-    return this.liveSockets().length;
+  async getWebSocketCount(sid: string | null = null): Promise<number> {
+    const now = Date.now();
+    return this.liveSockets().filter((s) => {
+      const a = this.readAttachment(s);
+      return !(sid !== null && a?.sid === sid) && now - (a?.lastPingMs ?? now) < IDLE_THRESHOLD_MS;
+    }).length;
   }
 
   // Claims this room code for a freshly created meeting so a concurrent
@@ -39,11 +50,8 @@ export class RoomSignal extends DurableObject<Env> {
       return new Response("expected websocket upgrade", { status: 426 });
     }
 
-    // A peer that changed networks (e.g. wifi -> cellular) often leaves a
-    // stale socket behind with no clean close event. Reclaim any socket
-    // that's past the heartbeat threshold before judging the room full,
-    // rather than waiting for the next alarm sweep to get around to it.
-    this.evictStaleSockets();
+    const sid = parseSid(new URL(request.url).searchParams.get("sid"));
+    this.evictSockets(sid);
     if (this.liveSockets().length >= 2) {
       return new Response("room full", { status: 409 });
     }
@@ -52,7 +60,7 @@ export class RoomSignal extends DurableObject<Env> {
     const [client, server] = Object.values(pair);
 
     this.ctx.acceptWebSocket(server);
-    this.touch(server);
+    server.serializeAttachment({ lastPingMs: Date.now(), sid } satisfies SocketAttachment);
     await this.ctx.storage.delete(RESERVED_AT_KEY);
 
     const allSockets = this.liveSockets();
@@ -74,10 +82,9 @@ export class RoomSignal extends DurableObject<Env> {
   }
 
   async webSocketMessage(ws: WebSocket, message: string | ArrayBuffer): Promise<void> {
-    if (typeof message === "string" && this.isPing(message)) {
-      this.touch(ws);
-      return;
-    }
+    if (this.readAttachment(ws)?.evicted) return;
+    this.touch(ws);
+    if (typeof message === "string" && this.isPing(message)) return;
 
     const sockets = this.liveSockets();
     if (sockets.length < 2) return;
@@ -117,7 +124,7 @@ export class RoomSignal extends DurableObject<Env> {
   }
 
   async alarm(): Promise<void> {
-    this.evictStaleSockets();
+    this.evictSockets();
 
     if (this.liveSockets().length > 0) {
       await this.scheduleSweep();
@@ -128,16 +135,17 @@ export class RoomSignal extends DurableObject<Env> {
 
   // Dead peers (network switch, lid closed) never send a close frame, so
   // webSocketClose won't fire for them — the survivor is told here instead.
-  private evictStaleSockets(): void {
+  private evictSockets(sid: string | null = null): void {
     const now = Date.now();
     let evictedAny = false;
     for (const socket of this.liveSockets()) {
-      const attachment = this.readAttachment(socket);
-      const lastPingMs = attachment?.lastPingMs ?? now;
-      if (now - lastPingMs < HEARTBEAT_THRESHOLD_MS) continue;
+      const a = this.readAttachment(socket);
+      const lastPingMs = a?.lastPingMs ?? now;
+      const replaced = sid !== null && a?.sid === sid;
+      if (!replaced && now - lastPingMs < IDLE_THRESHOLD_MS) continue;
       try {
-        socket.serializeAttachment({ lastPingMs, evicted: true } satisfies SocketAttachment);
-        socket.close(STALE_CLOSE_CODE, "stale-connection");
+        socket.serializeAttachment({ lastPingMs, sid: a?.sid ?? null, evicted: true } satisfies SocketAttachment);
+        socket.close(replaced ? REPLACED_CLOSE_CODE : STALE_CLOSE_CODE, replaced ? "replaced" : "idle");
       } catch {
         // Socket already torn down by the runtime.
       }
@@ -174,8 +182,9 @@ export class RoomSignal extends DurableObject<Env> {
   }
 
   private touch(ws: WebSocket): void {
+    const prev = this.readAttachment(ws);
     try {
-      ws.serializeAttachment({ lastPingMs: Date.now() } satisfies SocketAttachment);
+      ws.serializeAttachment({ sid: null, ...prev, lastPingMs: Date.now() } satisfies SocketAttachment);
     } catch {
       // Socket closed between receipt and touch.
     }

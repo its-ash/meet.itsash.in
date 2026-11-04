@@ -1,7 +1,8 @@
 import init, { normalize_room_id } from "./wasm/wasm_signal.js";
-import { SIGNAL_NEW_ROOM_URL, SIGNAL_ROOM_STATUS_URL } from "./config";
-import { CallSession, type CallEvent } from "./call";
+import { SIGNAL_NEW_ROOM_URL } from "./config";
+import { CallSession, isRoomFull, type CallEvent } from "./call";
 import { listDevices } from "./rtc";
+import { bindInstallButton, registerServiceWorker } from "./pwa";
 import {
   bindCameraToggle,
   bindCopyLink,
@@ -101,8 +102,12 @@ function handleCallEvent(event: CallEvent): void {
       break;
     case "discarded":
       stopCallDurationTimer();
-      setEndedMessage("Session ended", "You were disconnected.");
+      setEndedMessage("Session ended", "This meeting is open in another tab.");
       showView("ended");
+      break;
+    case "full":
+      stopCallDurationTimer();
+      showView("full");
       break;
     case "peer-left":
       // The "waiting" event that follows drives the UI back to the waiting view.
@@ -123,17 +128,6 @@ function handleCallEvent(event: CallEvent): void {
   }
 }
 
-async function isRoomFull(roomId: string): Promise<boolean> {
-  try {
-    const res = await fetch(`${SIGNAL_ROOM_STATUS_URL}/${roomId}`);
-    if (!res.ok) return false;
-    const { count } = (await res.json()) as { count: number };
-    return count >= 2;
-  } catch {
-    return false;
-  }
-}
-
 async function enterRoom(roomId: string): Promise<void> {
   if (await isRoomFull(roomId)) {
     showView("full");
@@ -148,7 +142,7 @@ async function enterRoom(roomId: string): Promise<void> {
   try {
     await activeSession.start();
   } catch {
-    setEndedMessage("Camera/microphone required", "Please allow camera and microphone access, then try again.");
+    setEndedMessage("Microphone required", "Please allow microphone access, then try again.");
     showView("ended");
   }
 }
@@ -171,9 +165,7 @@ function bindCallControls(): void {
     // Track enable/disable is wired via the local stream captured in main-scope session.
     activeSession?.setMicEnabled(enabled);
   });
-  bindCameraToggle((enabled) => {
-    activeSession?.setCameraEnabled(enabled);
-  });
+  bindCameraToggle(async (enabled) => (activeSession ? activeSession.setCameraEnabled(enabled) : false));
   bindEndCall(() => {
     activeSession?.stop();
     location.href = "/";
@@ -227,6 +219,9 @@ async function togglePip(): Promise<void> {
 }
 
 async function main(): Promise<void> {
+  addEventListener("pageshow", (e) => e.persisted && location.reload());
+  registerServiceWorker();
+  bindInstallButton();
   await init();
   bindLandingForm();
   bindCallControls();
@@ -240,6 +235,10 @@ async function main(): Promise<void> {
       history.replaceState({}, "", `/${roomId}`);
     }
     await enterRoom(roomId);
+  } else if (new URLSearchParams(location.search).has("new")) {
+    history.replaceState({}, "", "/");
+    showView("landing");
+    await createRoom();
   } else {
     showView("landing");
   }

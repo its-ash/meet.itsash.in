@@ -1,4 +1,4 @@
-import { RoomSignal, type Env } from "./room";
+import { RoomSignal, parseSid, type Env } from "./room";
 
 export { RoomSignal };
 
@@ -94,7 +94,7 @@ export default {
       const roomId = statusMatch[1];
       if (!ROOM_ID_RE.test(roomId)) return text("invalid room id", origin, 400);
       const stub = env.ROOM.get(env.ROOM.idFromName(roomId.toLowerCase()));
-      const count = await stub.getWebSocketCount();
+      const count = await stub.getWebSocketCount(parseSid(url.searchParams.get("sid")));
       return json({ count }, origin);
     }
 

@@ -1,67 +1,197 @@
 type View = "landing" | "waiting" | "call" | "ended" | "full";
+type Side = "local" | "remote";
+type QualityState = "reconnecting" | "fair" | "poor" | "good";
+
+const THEME = { light: "#f4f3ee", dark: "#0d0e0e" };
+const METER_MS = 120;
+const SPEAK_LEVEL = 0.02;
+const SPEAK_HOLD_MS = 350;
+const FRAME_STALE_MS = 2000;
+const COPY_RESET_MS = 1600;
+
+const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 
 const views: Record<View, HTMLElement> = {
-  landing: document.getElementById("view-landing") as HTMLElement,
-  waiting: document.getElementById("view-waiting") as HTMLElement,
-  call: document.getElementById("view-call") as HTMLElement,
-  ended: document.getElementById("view-ended") as HTMLElement,
-  full: document.getElementById("view-full") as HTMLElement,
+  landing: $("view-landing"),
+  waiting: $("view-waiting"),
+  call: $("view-call"),
+  ended: $("view-ended"),
+  full: $("view-full"),
 };
 
 export function showView(view: View): void {
-  for (const [name, el] of Object.entries(views)) {
-    el.classList.toggle("hidden", name !== view);
-  }
+  for (const [name, el] of Object.entries(views)) el.hidden = name !== view;
+  const dark = view === "waiting" || view === "call";
+  document.querySelector('meta[name="theme-color"]')?.setAttribute("content", dark ? THEME.dark : THEME.light);
 }
 
 export function setLandingError(message: string | null): void {
-  const el = document.getElementById("landing-error") as HTMLElement;
-  if (message) {
-    el.textContent = message;
-    el.classList.remove("hidden");
-  } else {
-    el.classList.add("hidden");
-  }
+  const el = $("landing-error");
+  const input = $("input-room-id");
+  el.textContent = message ?? "";
+  el.hidden = !message;
+  input.setAttribute("aria-invalid", String(!!message));
+  input.setAttribute("aria-describedby", message ? "landing-error landing-hint" : "landing-hint");
 }
 
 export function setRoomLink(roomId: string): void {
-  const link = `${location.origin}/${roomId}`;
-  (document.getElementById("room-link") as HTMLElement).textContent = link;
-}
-
-export function setLocalPreview(stream: MediaStream): void {
-  const preview = document.getElementById("local-preview") as HTMLVideoElement;
-  preview.srcObject = stream;
+  $("room-link").textContent = `${location.origin}/${roomId}`;
 }
 
 export function setCallRoomCode(roomId: string): void {
-  (document.getElementById("call-room-code") as HTMLElement).textContent = roomId;
-  const waitingLabel = document.getElementById("call-room-code-waiting");
-  if (waitingLabel) waitingLabel.textContent = roomId;
+  $("call-room-code").textContent = roomId;
+  $("call-room-code-waiting").textContent = roomId;
+}
+
+const tileIds: Record<Side, string[]> = { local: ["preview-tile", "local-tile"], remote: ["remote-tile"] };
+const streams: Record<Side, MediaStream | null> = { local: null, remote: null };
+const watched = new WeakSet<MediaStreamTrack>();
+const frames = { count: -1, at: 0 };
+
+function eachTile(side: Side, fn: (el: HTMLElement) => void): void {
+  for (const id of tileIds[side]) {
+    const el = document.getElementById(id);
+    if (el) fn(el);
+  }
+}
+
+function remoteFramesFresh(now: number): boolean {
+  const q = $<HTMLVideoElement>("remote-video").getVideoPlaybackQuality?.();
+  if (!q) return true;
+  if (q.totalVideoFrames !== frames.count) {
+    frames.count = q.totalVideoFrames;
+    frames.at = now;
+  }
+  return now - frames.at < FRAME_STALE_MS;
+}
+
+function syncVideo(side: Side, now = performance.now()): void {
+  const live = !!streams[side]?.getVideoTracks().some((t) => t.readyState === "live" && t.enabled && !t.muted);
+  const on = live && (side === "local" || remoteFramesFresh(now)) ? "on" : "off";
+  eachTile(side, (el) => {
+    if (el.dataset.video !== on) el.dataset.video = on;
+  });
+}
+
+function watchStream(side: Side, stream: MediaStream): void {
+  streams[side] = stream;
+  const sync = () => {
+    for (const t of stream.getVideoTracks()) {
+      if (watched.has(t)) continue;
+      watched.add(t);
+      for (const ev of ["mute", "unmute", "ended"]) t.addEventListener(ev, () => syncVideo(side));
+    }
+    syncVideo(side);
+  };
+  stream.onaddtrack = sync;
+  stream.onremovetrack = sync;
+  sync();
+  startMeters();
+}
+
+type Meter = { src: MediaStreamAudioSourceNode | null; an: AnalyserNode | null; id: string; until: number };
+
+const meters: Record<Side, Meter> = {
+  local: { src: null, an: null, id: "", until: 0 },
+  remote: { src: null, an: null, id: "", until: 0 },
+};
+const buf = new Float32Array(512);
+let ctx: AudioContext | null = null;
+let meterTimer: number | null = null;
+
+function audioCtx(): AudioContext | null {
+  if (!ctx) {
+    try {
+      ctx = new AudioContext();
+    } catch {
+      return null;
+    }
+    addEventListener("pointerdown", () => void ctx?.resume().catch(() => undefined), { passive: true });
+  }
+  if (ctx.state === "suspended") void ctx.resume().catch(() => undefined);
+  return ctx;
+}
+
+function rebind(m: Meter, track: MediaStreamTrack | undefined): void {
+  m.src?.disconnect();
+  m.src = null;
+  m.an = null;
+  m.id = track?.id ?? "";
+  const c = track ? audioCtx() : null;
+  if (!c || !track) return;
+  try {
+    const an = c.createAnalyser();
+    an.fftSize = buf.length;
+    const src = c.createMediaStreamSource(new MediaStream([track]));
+    src.connect(an);
+    m.src = src;
+    m.an = an;
+  } catch {
+    m.src = null;
+    m.an = null;
+  }
+}
+
+function rms(an: AnalyserNode): number {
+  an.getFloatTimeDomainData(buf);
+  let sum = 0;
+  for (const v of buf) sum += v * v;
+  return Math.sqrt(sum / buf.length);
+}
+
+function meterTick(): void {
+  const now = performance.now();
+  for (const side of ["local", "remote"] as const) {
+    const m = meters[side];
+    const track = streams[side]?.getAudioTracks().find((t) => t.readyState === "live");
+    if ((track?.id ?? "") !== m.id) rebind(m, track);
+    if (m.an && track?.enabled && rms(m.an) > SPEAK_LEVEL) m.until = now + SPEAK_HOLD_MS;
+    const speaking = now < m.until;
+    eachTile(side, (el) => el.toggleAttribute("data-speaking", speaking));
+  }
+  syncVideo("remote", now);
+}
+
+function startMeters(): void {
+  meterTimer ??= window.setInterval(meterTick, METER_MS);
+}
+
+export function setLocalPreview(stream: MediaStream): void {
+  $<HTMLVideoElement>("local-preview").srcObject = stream;
+  watchStream("local", stream);
 }
 
 export function setLocalVideoStream(stream: MediaStream): void {
-  (document.getElementById("local-video") as HTMLVideoElement).srcObject = stream;
+  $<HTMLVideoElement>("local-video").srcObject = stream;
+  watchStream("local", stream);
 }
 
 export function setRemoteVideoStream(stream: MediaStream): void {
-  (document.getElementById("remote-video") as HTMLVideoElement).srcObject = stream;
+  const video = $<HTMLVideoElement>("remote-video");
+  if (video.srcObject !== stream) {
+    video.srcObject = stream;
+    frames.count = -1;
+  }
+  watchStream("remote", stream);
 }
 
 export function setEndedMessage(title: string, message: string): void {
-  (document.getElementById("ended-title") as HTMLElement).textContent = title;
-  (document.getElementById("ended-message") as HTMLElement).textContent = message;
+  $("ended-title").textContent = title;
+  $("ended-message").textContent = message;
 }
 
 let durationTimer: number | null = null;
+
 export function startCallDurationTimer(): void {
+  stopCallDurationTimer();
   const startedAt = Date.now();
-  const el = document.getElementById("call-duration") as HTMLElement;
+  const el = $("call-duration");
   const tick = () => {
-    const elapsed = Math.floor((Date.now() - startedAt) / 1000);
-    const mm = String(Math.floor(elapsed / 60)).padStart(2, "0");
-    const ss = String(elapsed % 60).padStart(2, "0");
-    el.textContent = `${mm}:${ss}`;
+    const s = Math.floor((Date.now() - startedAt) / 1000);
+    const h = Math.floor(s / 3600);
+    const mm = String(Math.floor((s % 3600) / 60)).padStart(2, "0");
+    const ss = String(s % 60).padStart(2, "0");
+    el.textContent = h ? `${h}:${mm}:${ss}` : `${mm}:${ss}`;
   };
   tick();
   durationTimer = window.setInterval(tick, 1000);
@@ -74,178 +204,167 @@ export function stopCallDurationTimer(): void {
   }
 }
 
-function setToggleVisualState(
-  btn: HTMLButtonElement,
-  onIcon: HTMLElement,
-  offIcon: HTMLElement,
-  active: boolean,
-): void {
-  onIcon.classList.toggle("hidden", active);
-  offIcon.classList.toggle("hidden", !active);
-  btn.classList.toggle("bg-danger", active);
-  btn.classList.toggle("hover:bg-white/10", !active);
-}
-
 export function bindMicToggle(onToggle: (enabled: boolean) => void): void {
-  const btn = document.getElementById("btn-toggle-mic") as HTMLButtonElement;
-  const onIcon = document.getElementById("icon-mic-on") as HTMLElement;
-  const offIcon = document.getElementById("icon-mic-off") as HTMLElement;
+  const btn = $<HTMLButtonElement>("btn-toggle-mic");
+  const onIcon = $("icon-mic-on");
+  const offIcon = $("icon-mic-off");
   let enabled = true;
   btn.addEventListener("click", () => {
     enabled = !enabled;
     btn.setAttribute("aria-pressed", String(!enabled));
     btn.setAttribute("aria-label", enabled ? "Mute microphone" : "Unmute microphone");
-    setToggleVisualState(btn, onIcon, offIcon, !enabled);
+    onIcon.classList.toggle("hidden", !enabled);
+    offIcon.classList.toggle("hidden", enabled);
+    eachTile("local", (el) => el.toggleAttribute("data-muted", !enabled));
     onToggle(enabled);
   });
 }
 
-export function bindCameraToggle(onToggle: (enabled: boolean) => void): void {
-  const btn = document.getElementById("btn-toggle-camera") as HTMLButtonElement;
-  const onIcon = document.getElementById("icon-camera-on") as HTMLElement;
-  const offIcon = document.getElementById("icon-camera-off") as HTMLElement;
-  let enabled = true;
-  btn.addEventListener("click", () => {
-    enabled = !enabled;
-    btn.setAttribute("aria-pressed", String(!enabled));
+export function bindCameraToggle(onToggle: (enabled: boolean) => Promise<boolean>): void {
+  const btn = $<HTMLButtonElement>("btn-toggle-camera");
+  const onIcon = $("icon-camera-on");
+  const offIcon = $("icon-camera-off");
+  let enabled = false;
+  const render = () => {
+    btn.setAttribute("aria-pressed", String(enabled));
     btn.setAttribute("aria-label", enabled ? "Turn off camera" : "Turn on camera");
-    setToggleVisualState(btn, onIcon, offIcon, !enabled);
-    onToggle(enabled);
-  });
-}
-
-export function bindEndCall(onEnd: () => void): void {
-  document.getElementById("btn-end-call")?.addEventListener("click", onEnd);
-}
-
-export function bindStartNewFromFull(onStart: () => void): void {
-  document.getElementById("btn-new-from-full")?.addEventListener("click", onStart);
-}
-
-export function bindCopyLink(): void {
-  document.getElementById("btn-copy-link")?.addEventListener("click", async () => {
-    const text = document.getElementById("room-link")?.textContent ?? "";
-    const label = document.getElementById("copy-label");
+    onIcon.classList.toggle("hidden", !enabled);
+    offIcon.classList.toggle("hidden", enabled);
+  };
+  render();
+  btn.addEventListener("click", async () => {
+    if (btn.disabled) return;
+    btn.disabled = true;
+    btn.setAttribute("aria-busy", "true");
     try {
-      await navigator.clipboard.writeText(text);
-      if (label) {
-        label.textContent = "Copied";
-        window.setTimeout(() => (label.textContent = "Copy"), 1600);
-      }
-    } catch {
-      // Clipboard API unavailable — link is still selectable text.
+      if (await onToggle(!enabled)) enabled = !enabled;
+    } finally {
+      btn.disabled = false;
+      btn.removeAttribute("aria-busy");
+      render();
+      syncVideo("local");
     }
   });
 }
 
-type QualityState = "reconnecting" | "fair" | "poor" | "good";
+export function bindEndCall(onEnd: () => void): void {
+  $("btn-end-call").addEventListener("click", onEnd);
+}
 
-const QUALITY_DOT_CLASS: Record<QualityState, string> = {
-  reconnecting: "bg-amber-500",
-  fair: "bg-amber-500",
+export function bindStartNewFromFull(onStart: () => void): void {
+  $("btn-new-from-full").addEventListener("click", onStart);
+}
+
+export function bindCopyLink(): void {
+  const btn = $("btn-copy-link");
+  const label = $("copy-label");
+  let reset: number | null = null;
+  btn.addEventListener("click", async () => {
+    const link = $("room-link");
+    try {
+      await navigator.clipboard.writeText(link.textContent ?? "");
+      label.textContent = "Copied";
+      if (reset !== null) window.clearTimeout(reset);
+      reset = window.setTimeout(() => (label.textContent = "Copy"), COPY_RESET_MS);
+    } catch {
+      const range = document.createRange();
+      range.selectNodeContents(link);
+      getSelection()?.removeAllRanges();
+      getSelection()?.addRange(range);
+    }
+  });
+}
+
+const QUALITY_DOT: Record<QualityState, string> = {
+  reconnecting: "bg-warn",
+  fair: "bg-warn",
   poor: "bg-danger",
-  good: "bg-live",
+  good: "bg-accent",
 };
 
 function formatKbps(kbps: number): string {
   return kbps >= 1000 ? `${(kbps / 1000).toFixed(1)} Mbps` : `${Math.round(kbps)} kbps`;
 }
 
-export function setReconnectingIndicator(): void {
-  const el = document.getElementById("quality-indicator") as HTMLElement;
-  const dot = document.getElementById("quality-dot") as HTMLElement;
-  const label = document.getElementById("quality-label") as HTMLElement;
+function showQuality(level: QualityState, text: string): void {
+  $("quality-indicator").hidden = false;
+  $("quality-dot").className = `dot ${QUALITY_DOT[level]}`;
+  $("quality-label").textContent = text;
+}
 
-  el.classList.remove("hidden");
-  el.classList.add("flex");
-  dot.className = `w-1.5 h-1.5 rounded-full ${QUALITY_DOT_CLASS.reconnecting}`;
-  label.textContent = "Reconnecting…";
+export function setReconnectingIndicator(): void {
+  showQuality("reconnecting", "Reconnecting…");
 }
 
 export function setNetworkIndicator(level: QualityState, downloadKbps: number | null, uploadKbps: number | null): void {
-  const el = document.getElementById("quality-indicator") as HTMLElement;
-  const dot = document.getElementById("quality-dot") as HTMLElement;
-  const label = document.getElementById("quality-label") as HTMLElement;
-
-  el.classList.remove("hidden");
-  el.classList.add("flex");
-  dot.className = `w-1.5 h-1.5 rounded-full ${QUALITY_DOT_CLASS[level]}`;
-
   if (downloadKbps === null && uploadKbps === null) {
-    label.textContent = "Measuring…";
+    showQuality(level, "Measuring…");
     return;
   }
   const down = downloadKbps !== null ? formatKbps(downloadKbps) : "–";
   const up = uploadKbps !== null ? formatKbps(uploadKbps) : "–";
-  label.textContent = `↓${down} ↑${up}`;
+  showQuality(level, `↓${down} ↑${up}`);
 }
 
 export function hideNetworkIndicator(): void {
-  const el = document.getElementById("quality-indicator") as HTMLElement;
-  el.classList.add("hidden");
-  el.classList.remove("flex");
+  $("quality-indicator").hidden = true;
 }
 
 export function setPeerStatusBadge(width: number, height: number, transport: "direct" | "relay" | null): void {
-  const el = document.getElementById("peer-status-badge") as HTMLElement;
-  const transportLabel = transport === "relay" ? "relay" : transport === "direct" ? "direct" : "…";
-  el.textContent = `${width}×${height} · ${transportLabel}`;
+  $("peer-status-badge").textContent = `${width}×${height} · ${transport ?? "…"}`;
 }
 
 export function bindShareToggle(onToggle: () => void): void {
-  document.getElementById("btn-toggle-share")?.addEventListener("click", onToggle);
+  const btn = $<HTMLButtonElement>("btn-toggle-share");
+  if (typeof navigator.mediaDevices?.getDisplayMedia !== "function") {
+    btn.hidden = true;
+    return;
+  }
+  btn.addEventListener("click", onToggle);
 }
 
 export function setShareButtonState(sharing: boolean): void {
-  const btn = document.getElementById("btn-toggle-share") as HTMLButtonElement;
+  const btn = $<HTMLButtonElement>("btn-toggle-share");
   btn.setAttribute("aria-pressed", String(sharing));
   btn.setAttribute("aria-label", sharing ? "Stop sharing your screen" : "Share your screen");
-  setBarButtonActive(btn, sharing);
+  $("local-tile").toggleAttribute("data-sharing", sharing);
 }
 
 export function bindPipToggle(onToggle: () => void): void {
-  const btn = document.getElementById("btn-toggle-pip") as HTMLButtonElement;
+  const btn = $<HTMLButtonElement>("btn-toggle-pip");
   btn.hidden = false;
   btn.addEventListener("click", onToggle);
 }
 
 export function setPipButtonState(active: boolean): void {
-  const btn = document.getElementById("btn-toggle-pip") as HTMLButtonElement;
-  btn.setAttribute("aria-pressed", String(active));
-  setBarButtonActive(btn, active);
-}
-
-function setBarButtonActive(btn: HTMLElement, active: boolean): void {
-  btn.classList.toggle("bg-paper", active);
-  btn.classList.toggle("text-ink", active);
-  btn.classList.toggle("text-paper", !active);
-  btn.classList.toggle("hover:bg-white/10", !active);
+  $<HTMLButtonElement>("btn-toggle-pip").setAttribute("aria-pressed", String(active));
 }
 
 export function bindDevicePicker(onOpen: () => void): { close: () => void } {
-  const btn = document.getElementById("btn-toggle-devices") as HTMLButtonElement;
-  const panel = document.getElementById("device-picker") as HTMLElement;
+  const btn = $<HTMLButtonElement>("btn-toggle-devices");
+  const panel = $("device-picker");
 
   const close = () => {
-    panel.classList.add("hidden");
+    panel.hidden = true;
     btn.setAttribute("aria-expanded", "false");
   };
 
   btn.addEventListener("click", () => {
-    const isOpen = !panel.classList.contains("hidden");
-    if (isOpen) {
-      close();
-    } else {
-      panel.classList.remove("hidden");
-      btn.setAttribute("aria-expanded", "true");
-      onOpen();
-    }
+    if (!panel.hidden) return close();
+    panel.hidden = false;
+    btn.setAttribute("aria-expanded", "true");
+    onOpen();
   });
 
-  document.addEventListener("click", (event) => {
-    if (!panel.classList.contains("hidden") && !panel.contains(event.target as Node) && event.target !== btn) {
-      close();
-    }
+  document.addEventListener("click", (e) => {
+    const t = e.target as Node;
+    if (!panel.hidden && !panel.contains(t) && !btn.contains(t)) close();
+  });
+
+  document.addEventListener("keydown", (e) => {
+    if (e.key !== "Escape" || panel.hidden) return;
+    close();
+    btn.focus();
   });
 
   return { close };
@@ -257,11 +376,13 @@ export function populateDeviceSelects(
   onCameraChange: (deviceId: string) => void,
   onMicChange: (deviceId: string) => void,
 ): void {
-  const cameraSelect = document.getElementById("select-camera") as HTMLSelectElement;
-  const micSelect = document.getElementById("select-microphone") as HTMLSelectElement;
+  const cameraSelect = $<HTMLSelectElement>("select-camera");
+  const micSelect = $<HTMLSelectElement>("select-microphone");
 
-  cameraSelect.replaceChildren(...cameras.map((d) => new Option(d.label, d.deviceId)));
-  micSelect.replaceChildren(...microphones.map((d) => new Option(d.label, d.deviceId)));
+  cameraSelect.replaceChildren(...cameras.map((d, i) => new Option(d.label || `Camera ${i + 1}`, d.deviceId)));
+  micSelect.replaceChildren(...microphones.map((d, i) => new Option(d.label || `Microphone ${i + 1}`, d.deviceId)));
+  cameraSelect.disabled = !cameras.length;
+  micSelect.disabled = !microphones.length;
 
   cameraSelect.onchange = () => onCameraChange(cameraSelect.value);
   micSelect.onchange = () => onMicChange(micSelect.value);
