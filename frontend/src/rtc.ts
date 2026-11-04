@@ -1,37 +1,67 @@
 import { FALLBACK_ICE_SERVERS, SIGNAL_TURN_CREDENTIALS_URL } from "./config";
 
-const VIDEO_CODEC_PREFERENCE = ["AV1", "VP9", "H264", "VP8"];
-const AUDIO_CODEC_PREFERENCE = ["opus"];
+const VIDEO_CODECS = ["video/AV1", "video/H265", "video/VP9", "video/H264", "video/VP8"];
+const AUDIO_CODECS = ["audio/opus"];
+const OPUS_FMTP: Record<string, string> = { useinbandfec: "1", usedtx: "1" };
 
-function preferCodecs(kind: "video" | "audio", codecs: RTCRtpCodec[], preference: string[]): RTCRtpCodec[] {
-  const ranked = [...codecs].sort((a, b) => {
-    const rankA = preference.findIndex((name) => a.mimeType.toLowerCase() === `${kind}/${name.toLowerCase()}`);
-    const rankB = preference.findIndex((name) => b.mimeType.toLowerCase() === `${kind}/${name.toLowerCase()}`);
-    const normA = rankA === -1 ? preference.length : rankA;
-    const normB = rankB === -1 ? preference.length : rankB;
-    return normA - normB;
-  });
-  return ranked;
+let videoOrder: Promise<string[]> | null = null;
+
+function rankVideoCodecs(): Promise<string[]> {
+  return (videoOrder ??= Promise.all(
+    VIDEO_CODECS.map(async (mime, i) => {
+      try {
+        const res = await navigator.mediaCapabilities.encodingInfo({
+          type: "webrtc",
+          video: { contentType: mime, width: 1280, height: 720, bitrate: 1_500_000, framerate: 30 },
+        });
+        return { mime, i, score: res.supported ? (res.smooth ? 0 : 1) : 2 };
+      } catch {
+        return { mime, i, score: 0 };
+      }
+    }),
+  ).then((xs) => xs.sort((a, b) => a.score - b.score || a.i - b.i).map((x) => x.mime.toLowerCase())));
 }
 
-export function applyCodecPreferences(pc: RTCPeerConnection): void {
-  if (typeof RTCRtpSender.getCapabilities !== "function") return;
+const rank = (mime: string, order: string[]): number => {
+  const i = order.indexOf(mime.toLowerCase());
+  return i === -1 ? order.length : i;
+};
 
-  for (const transceiver of pc.getTransceivers()) {
-    const kind = (transceiver.sender.track?.kind ?? transceiver.receiver.track?.kind) as "video" | "audio" | undefined;
-    if (!kind || typeof transceiver.setCodecPreferences !== "function") continue;
+export async function applyCodecPreferences(pc: RTCPeerConnection): Promise<void> {
+  if (typeof RTCRtpReceiver.getCapabilities !== "function") return;
+  const orders = { video: await rankVideoCodecs(), audio: AUDIO_CODECS };
 
-    const capabilities = RTCRtpSender.getCapabilities(kind);
-    if (!capabilities) continue;
-
-    const preference = kind === "video" ? VIDEO_CODEC_PREFERENCE : AUDIO_CODEC_PREFERENCE;
-    const ordered = preferCodecs(kind, capabilities.codecs, preference);
+  for (const t of pc.getTransceivers()) {
+    const kind = (t.sender.track?.kind ?? t.receiver.track?.kind) as "video" | "audio" | undefined;
+    if (!kind || typeof t.setCodecPreferences !== "function") continue;
+    const codecs = RTCRtpReceiver.getCapabilities(kind)?.codecs;
+    if (!codecs) continue;
+    const order = orders[kind];
     try {
-      transceiver.setCodecPreferences(ordered);
+      t.setCodecPreferences([...codecs].sort((a, b) => rank(a.mimeType, order) - rank(b.mimeType, order)));
     } catch {
-      // Unsupported in this browser (e.g. Safari) — fall back to default negotiation.
+      // Unsupported in this browser — fall back to default negotiation.
     }
   }
+}
+
+export function tuneSdp(sdp: string): string {
+  const pt = /^a=rtpmap:(\d+) opus\/48000/im.exec(sdp)?.[1];
+  if (!pt) return sdp;
+  return sdp.replace(new RegExp(`^a=fmtp:${pt} (.*)$`, "m"), (_, raw: string) => {
+    const params = new Map(
+      raw
+        .split(";")
+        .map((kv) => kv.trim())
+        .filter(Boolean)
+        .map((kv) => {
+          const [k, ...v] = kv.split("=");
+          return [k, v.join("=")] as const;
+        }),
+    );
+    for (const [k, v] of Object.entries(OPUS_FMTP)) if (!params.has(k)) params.set(k, v);
+    return `a=fmtp:${pt} ${[...params].map(([k, v]) => (v ? `${k}=${v}` : k)).join(";")}`;
+  });
 }
 
 export interface DeviceConstraints {
@@ -39,36 +69,52 @@ export interface DeviceConstraints {
   audioDeviceId?: string;
 }
 
+const audioConstraints = (audioDeviceId?: string): MediaTrackConstraints => ({
+  echoCancellation: true,
+  noiseSuppression: true,
+  autoGainControl: true,
+  ...(audioDeviceId ? { deviceId: { exact: audioDeviceId } } : {}),
+});
+
+// Ideal, not exact: lets the browser pick the sensor's natural
+// portrait/landscape shape (important on mobile) instead of forcing
+// a fixed 1280x720 landscape frame.
+const videoConstraints = (videoDeviceId?: string): MediaTrackConstraints => ({
+  width: { ideal: 1280 },
+  height: { ideal: 720 },
+  aspectRatio: { ideal: window.innerWidth / window.innerHeight },
+  frameRate: { ideal: 30 },
+  ...(videoDeviceId ? { deviceId: { exact: videoDeviceId } } : {}),
+});
+
 export async function getMicStream(audioDeviceId?: string): Promise<MediaStream> {
-  return navigator.mediaDevices.getUserMedia({
-    audio: {
-      echoCancellation: true,
-      noiseSuppression: true,
-      autoGainControl: true,
-      ...(audioDeviceId ? { deviceId: { exact: audioDeviceId } } : {}),
-    },
-  });
+  return navigator.mediaDevices.getUserMedia({ audio: audioConstraints(audioDeviceId) });
+}
+
+export async function getInitialMedia(): Promise<MediaStream> {
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: audioConstraints(), video: videoConstraints() });
+    for (const t of stream.getVideoTracks()) {
+      t.stop();
+      stream.removeTrack(t);
+    }
+    if (stream.getAudioTracks().length) return stream;
+  } catch {
+    // Camera denied, missing, or busy — ask for the mic alone.
+  }
+  return getMicStream();
 }
 
 export async function getCameraTrack(videoDeviceId?: string): Promise<MediaStreamTrack> {
-  const stream = await navigator.mediaDevices.getUserMedia({
-    video: {
-      // Ideal, not exact: lets the browser pick the sensor's natural
-      // portrait/landscape shape (important on mobile) instead of forcing
-      // a fixed 1280x720 landscape frame that then gets cropped oddly by
-      // object-cover in a portrait-shaped video element.
-      width: { ideal: 1280 },
-      height: { ideal: 720 },
-      aspectRatio: { ideal: window.innerWidth / window.innerHeight },
-      frameRate: { ideal: 30 },
-      ...(videoDeviceId ? { deviceId: { exact: videoDeviceId } } : {}),
-    },
-  });
-  return stream.getVideoTracks()[0];
+  const [track] = (await navigator.mediaDevices.getUserMedia({ video: videoConstraints(videoDeviceId) })).getVideoTracks();
+  track.contentHint = "motion";
+  return track;
 }
 
 export async function getScreenStream(): Promise<MediaStream> {
-  return navigator.mediaDevices.getDisplayMedia({ video: true, audio: false });
+  const stream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: false });
+  for (const t of stream.getVideoTracks()) t.contentHint = "detail";
+  return stream;
 }
 
 export interface MediaDeviceOption {

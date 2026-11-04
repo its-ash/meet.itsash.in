@@ -18,8 +18,8 @@ Anonymous, room-code-based, peer-to-peer (WebRTC) video meeting. No accounts, no
 
 ## Call features
 
-- **Audio-first** — a call starts with microphone only. Camera and screen share each ask for their own permission when the user turns them on, and switch in via `replaceTrack` (no renegotiation).
-- **Codec preference** — AV1 → VP9 → H264 → VP8 for video, Opus for audio, negotiated via `setCodecPreferences` where supported.
+- **Audio-first** — on join, the browser asks for microphone and camera in one prompt; the camera is released at once and the call starts audio-only. If the camera is denied or missing, the mic is asked for alone. Camera and screen share switch in via `replaceTrack` (no renegotiation).
+- **Codec preference** — AV1 → H265 → VP9 → H264 → VP8 for video, ranked per device with `MediaCapabilities.encodingInfo` (codecs that cannot encode smoothly move down), set via `setCodecPreferences` before each offer/answer so both peers pick the best codec they share. Opus for audio with in-band FEC and DTX. Camera tracks use `contentHint: "motion"`, screen share `"detail"`.
 - **TURN fallback** — the Worker mints short-lived Cloudflare Realtime TURN credentials on request; the client falls back to STUN-only if TURN isn't configured or the request fails.
 - **ICE reconnect** — a brief `disconnected` ICE state triggers an automatic `iceRestart` before the call is considered failed, recovering from transient network drops without ending the call.
 - **Connection-quality indicator** — polls `RTCPeerConnection.getStats()` to surface a subtle "fair/poor connection" or "reconnecting" indicator; hidden when the connection is healthy.

@@ -16,10 +16,12 @@ import {
   applyCodecPreferences,
   createPeerConnection,
   getCameraTrack,
+  getInitialMedia,
   getMicStream,
   getOutgoingVideoResolution,
   getScreenStream,
   pollConnectionQuality,
+  tuneSdp,
   type NetworkStats,
   type DeviceConstraints,
 } from "./rtc";
@@ -106,7 +108,7 @@ export class CallSession {
   async start(): Promise<void> {
     await ensureWasm();
 
-    this.localStream = await getMicStream();
+    this.localStream = await getInitialMedia();
     this.onEvent({ type: "local-stream", stream: this.localStream });
 
     this.session = new SignalSession(this.roomId);
@@ -181,6 +183,8 @@ export class CallSession {
         this.send(msg);
       }
     };
+
+    await applyCodecPreferences(pc);
   }
 
   private outgoingVideoTrack(): MediaStreamTrack | null {
@@ -265,9 +269,9 @@ export class CallSession {
     if (!this.isOfferer) return;
     this.enqueue(async () => {
       if (this.pc !== pc || pc.signalingState !== "stable") return;
-      const offer = await pc.createOffer({ iceRestart: true });
-      await pc.setLocalDescription(offer);
-      this.send(SignalSession.build_offer_message(offer.sdp ?? ""));
+      const sdp = tuneSdp((await pc.createOffer({ iceRestart: true })).sdp ?? "");
+      await pc.setLocalDescription({ type: "offer", sdp });
+      this.send(SignalSession.build_offer_message(sdp));
     });
   }
 
@@ -421,20 +425,19 @@ export class CallSession {
     switch (kind) {
       case "create-offer": {
         this.isOfferer = true;
-        const offer = await this.pc.createOffer();
-        await this.pc.setLocalDescription(offer);
-        applyCodecPreferences(this.pc);
-        this.send(SignalSession.build_offer_message(offer.sdp ?? ""));
+        const sdp = tuneSdp((await this.pc.createOffer()).sdp ?? "");
+        await this.pc.setLocalDescription({ type: "offer", sdp });
+        this.send(SignalSession.build_offer_message(sdp));
         break;
       }
       case "apply-offer": {
         await this.pc.setRemoteDescription({ type: "offer", sdp: payload });
         await this.adoptVideoTransceiver(this.pc);
+        await applyCodecPreferences(this.pc);
         await this.flushPendingIce();
-        const answer = await this.pc.createAnswer();
-        await this.pc.setLocalDescription(answer);
-        applyCodecPreferences(this.pc);
-        this.send(SignalSession.build_answer_message(answer.sdp ?? ""));
+        const sdp = tuneSdp((await this.pc.createAnswer()).sdp ?? "");
+        await this.pc.setLocalDescription({ type: "answer", sdp });
+        this.send(SignalSession.build_answer_message(sdp));
         break;
       }
       case "apply-answer": {
