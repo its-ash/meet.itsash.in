@@ -92,17 +92,9 @@ export async function getMicStream(audioDeviceId?: string): Promise<MediaStream>
 }
 
 export async function getInitialMedia(): Promise<MediaStream> {
-  try {
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: audioConstraints(), video: videoConstraints() });
-    for (const t of stream.getVideoTracks()) {
-      t.stop();
-      stream.removeTrack(t);
-    }
-    if (stream.getAudioTracks().length) return stream;
-  } catch {
-    // Camera denied, missing, or busy — ask for the mic alone.
-  }
-  return getMicStream();
+  const stream = await navigator.mediaDevices.getUserMedia({ audio: audioConstraints(), video: videoConstraints() });
+  for (const t of stream.getVideoTracks()) t.contentHint = "motion";
+  return stream;
 }
 
 export async function getCameraTrack(videoDeviceId?: string): Promise<MediaStreamTrack> {

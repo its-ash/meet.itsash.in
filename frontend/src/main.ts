@@ -4,7 +4,6 @@ import { CallSession, isRoomFull, type CallEvent } from "./call";
 import { listDevices } from "./rtc";
 import { bindInstallButton, registerServiceWorker } from "./pwa";
 import {
-  bindCameraToggle,
   bindCopyLink,
   bindDevicePicker,
   bindEndCall,
@@ -114,7 +113,11 @@ function handleCallEvent(event: CallEvent): void {
       break;
     case "failed":
       stopCallDurationTimer();
-      setEndedMessage("Connection failed", "Could not establish a connection. Please try again.");
+      if (event.reason === "camera-lost") {
+        setEndedMessage("Camera required", "The camera stopped. Connect your camera, then try again.");
+      } else {
+        setEndedMessage("Connection failed", "Could not establish a connection. Please try again.");
+      }
       showView("ended");
       break;
     case "screen-share-started":
@@ -142,7 +145,7 @@ async function enterRoom(roomId: string): Promise<void> {
   try {
     await activeSession.start();
   } catch {
-    setEndedMessage("Microphone required", "Please allow microphone access, then try again.");
+    setEndedMessage("Camera and microphone required", "Please allow camera and microphone access, then try again.");
     showView("ended");
   }
 }
@@ -165,7 +168,6 @@ function bindCallControls(): void {
     // Track enable/disable is wired via the local stream captured in main-scope session.
     activeSession?.setMicEnabled(enabled);
   });
-  bindCameraToggle(async (enabled) => (activeSession ? activeSession.setCameraEnabled(enabled) : false));
   bindEndCall(() => {
     activeSession?.stop();
     location.href = "/";

@@ -109,6 +109,7 @@ export class CallSession {
     await ensureWasm();
 
     this.localStream = await getInitialMedia();
+    this.setCameraTrack(this.localStream.getVideoTracks()[0]);
     this.onEvent({ type: "local-stream", stream: this.localStream });
 
     this.session = new SignalSession(this.roomId);
@@ -471,35 +472,26 @@ export class CallSession {
     }
   }
 
-  async setCameraEnabled(enabled: boolean): Promise<boolean> {
-    if (enabled === (this.cameraTrack !== null)) return true;
-    if (enabled) {
-      try {
-        await this.useCameraTrack(await getCameraTrack(this.videoDeviceId));
-      } catch {
-        return false;
-      }
-    } else {
-      await this.useCameraTrack(null);
-    }
-    return true;
+  private setCameraTrack(track: MediaStreamTrack): void {
+    this.cameraTrack = track;
+    track.onended = () => {
+      if (!this.closed && this.cameraTrack === track) this.fail("camera-lost");
+    };
   }
 
-  private async useCameraTrack(track: MediaStreamTrack | null): Promise<void> {
+  private async useCameraTrack(track: MediaStreamTrack): Promise<void> {
+    if (this.closed) {
+      track.stop();
+      return;
+    }
     const old = this.cameraTrack;
     if (old) {
+      old.onended = null;
       this.localStream?.removeTrack(old);
       old.stop();
     }
-    this.cameraTrack = track;
-    if (track) {
-      if (this.closed) {
-        track.stop();
-        this.cameraTrack = null;
-        return;
-      }
-      this.localStream?.addTrack(track);
-    }
+    this.setCameraTrack(track);
+    this.localStream?.addTrack(track);
     if (!this.screenStream) await this.videoSender?.replaceTrack(track);
     if (this.localStream) this.onEvent({ type: "local-stream", stream: this.localStream });
     this.emitVideoResolution();

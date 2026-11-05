@@ -18,7 +18,7 @@ Anonymous, room-code-based, peer-to-peer (WebRTC) video meeting. No accounts, no
 
 ## Call features
 
-- **Audio-first** — on join, the browser asks for microphone and camera in one prompt; the camera is released at once and the call starts audio-only. If the camera is denied or missing, the mic is asked for alone. Camera and screen share switch in via `replaceTrack` (no renegotiation).
+- **Video required** — on join, the browser asks for microphone and camera in one prompt. If either is denied or missing, the call does not start. The camera stays on for the full call; if it stops, the call ends. Screen share switches in via `replaceTrack` (no renegotiation).
 - **Codec preference** — AV1 → H265 → VP9 → H264 → VP8 for video, ranked per device with `MediaCapabilities.encodingInfo` (codecs that cannot encode smoothly move down), set via `setCodecPreferences` before each offer/answer so both peers pick the best codec they share. Opus for audio with in-band FEC and DTX. Camera tracks use `contentHint: "motion"`, screen share `"detail"`.
 - **TURN fallback** — the Worker mints short-lived Cloudflare Realtime TURN credentials on request; the client falls back to STUN-only if TURN isn't configured or the request fails.
 - **ICE reconnect** — a brief `disconnected` ICE state triggers an automatic `iceRestart` before the call is considered failed, recovering from transient network drops without ending the call.
@@ -26,7 +26,7 @@ Anonymous, room-code-based, peer-to-peer (WebRTC) video meeting. No accounts, no
 - **Screen sharing** — swaps the outgoing video track via `replaceTrack` (no renegotiation), reverts to camera automatically when sharing stops (in-app or via the browser's native "stop sharing" control).
 - **Device picker** — switch camera/microphone mid-call from an in-call popover.
 - **Picture-in-picture** — Document PiP where available, falling back to element PiP; the control is hidden entirely in browsers that support neither.
-- Mute/camera toggles, mirrored self-view, call duration, copyable room link.
+- Mute toggle, mirrored self-view, call duration, copyable room link.
 
 ## Architecture
 

@@ -220,33 +220,6 @@ export function bindMicToggle(onToggle: (enabled: boolean) => void): void {
   });
 }
 
-export function bindCameraToggle(onToggle: (enabled: boolean) => Promise<boolean>): void {
-  const btn = $<HTMLButtonElement>("btn-toggle-camera");
-  const onIcon = $("icon-camera-on");
-  const offIcon = $("icon-camera-off");
-  let enabled = false;
-  const render = () => {
-    btn.setAttribute("aria-pressed", String(enabled));
-    btn.setAttribute("aria-label", enabled ? "Turn off camera" : "Turn on camera");
-    onIcon.classList.toggle("hidden", !enabled);
-    offIcon.classList.toggle("hidden", enabled);
-  };
-  render();
-  btn.addEventListener("click", async () => {
-    if (btn.disabled) return;
-    btn.disabled = true;
-    btn.setAttribute("aria-busy", "true");
-    try {
-      if (await onToggle(!enabled)) enabled = !enabled;
-    } finally {
-      btn.disabled = false;
-      btn.removeAttribute("aria-busy");
-      render();
-      syncVideo("local");
-    }
-  });
-}
-
 export function bindEndCall(onEnd: () => void): void {
   $("btn-end-call").addEventListener("click", onEnd);
 }
