@@ -91,10 +91,22 @@ export async function getMicStream(audioDeviceId?: string): Promise<MediaStream>
   return navigator.mediaDevices.getUserMedia({ audio: audioConstraints(audioDeviceId) });
 }
 
+async function tryGetUserMedia(constraints: MediaStreamConstraints): Promise<MediaStream | null> {
+  try {
+    return await navigator.mediaDevices.getUserMedia(constraints);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Calls start audio-only: only the microphone is requested up front (the
+ * camera is opt-in via the camera button). The mic is optional too —
+ * resolves to an empty stream if it is denied or missing, never rejects.
+ */
 export async function getInitialMedia(): Promise<MediaStream> {
-  const stream = await navigator.mediaDevices.getUserMedia({ audio: audioConstraints(), video: videoConstraints() });
-  for (const t of stream.getVideoTracks()) t.contentHint = "motion";
-  return stream;
+  if (!navigator.mediaDevices?.getUserMedia) return new MediaStream();
+  return (await tryGetUserMedia({ audio: audioConstraints() })) ?? new MediaStream();
 }
 
 export async function getCameraTrack(videoDeviceId?: string): Promise<MediaStreamTrack> {
@@ -104,9 +116,46 @@ export async function getCameraTrack(videoDeviceId?: string): Promise<MediaStrea
 }
 
 export async function getScreenStream(): Promise<MediaStream> {
-  const stream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: false });
+  const options = {
+    video: { frameRate: { ideal: 30 } },
+    // Tab/system audio: keep it unprocessed — echo cancellation and noise
+    // suppression mangle music and video soundtracks.
+    audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false },
+    systemAudio: "include",
+    // Capturing this tab would loop the partner's own audio back to them.
+    selfBrowserSurface: "exclude",
+  } as DisplayMediaStreamOptions;
+  const stream = await navigator.mediaDevices.getDisplayMedia(options);
   for (const t of stream.getVideoTracks()) t.contentHint = "detail";
+  for (const t of stream.getAudioTracks()) t.contentHint = "music";
   return stream;
+}
+
+/**
+ * Mixes the microphone and screen-share audio into one track so both reach
+ * the partner over the single audio sender (no renegotiation needed). The
+ * mic source follows its track's `enabled` flag, so muting the mic still
+ * leaves the shared audio audible.
+ */
+export class AudioMixer {
+  private readonly ctx = new AudioContext();
+  private readonly dest = this.ctx.createMediaStreamDestination();
+
+  constructor(tracks: MediaStreamTrack[]) {
+    for (const track of tracks) {
+      this.ctx.createMediaStreamSource(new MediaStream([track])).connect(this.dest);
+    }
+    void this.ctx.resume().catch(() => undefined);
+  }
+
+  get track(): MediaStreamTrack {
+    return this.dest.stream.getAudioTracks()[0];
+  }
+
+  close(): void {
+    for (const t of this.dest.stream.getTracks()) t.stop();
+    void this.ctx.close().catch(() => undefined);
+  }
 }
 
 export interface MediaDeviceOption {
@@ -137,10 +186,27 @@ async function fetchTurnIceServers(): Promise<RTCIceServer[] | null> {
   }
 }
 
+// Credentials are issued with a 1h TTL (worker); reuse them for well under
+// that so peer-connection resets and rejoins don't each pay a round trip.
+const ICE_SERVERS_CACHE_MS = 30 * 60 * 1000;
+let iceServersCache: { at: number; servers: Promise<RTCIceServer[]> } | null = null;
+
+/** Starts (or reuses) the ICE server fetch. Safe to call early to warm the cache. */
+export function getIceServers(): Promise<RTCIceServer[]> {
+  const now = Date.now();
+  if (!iceServersCache || now - iceServersCache.at > ICE_SERVERS_CACHE_MS) {
+    const servers = fetchTurnIceServers().then((turn) => {
+      // Don't keep a failed fetch cached — retry on the next connection.
+      if (!turn) iceServersCache = null;
+      return turn ?? FALLBACK_ICE_SERVERS;
+    });
+    iceServersCache = { at: now, servers };
+  }
+  return iceServersCache.servers;
+}
+
 export async function createPeerConnection(): Promise<RTCPeerConnection> {
-  const turnServers = await fetchTurnIceServers();
-  const iceServers = turnServers ?? FALLBACK_ICE_SERVERS;
-  return new RTCPeerConnection({ iceServers });
+  return new RTCPeerConnection({ iceServers: await getIceServers() });
 }
 
 export function getOutgoingVideoResolution(sender: RTCRtpSender | null): { width: number; height: number } | null {

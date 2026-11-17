@@ -166,13 +166,83 @@ export function setLocalVideoStream(stream: MediaStream): void {
   watchStream("local", stream);
 }
 
+/**
+ * Browsers block autoplay-with-sound on pages that have no user gesture and
+ * no active camera/mic capture — exactly the case for someone who opened a
+ * link and declined both permissions. Rejected play() would leave the remote
+ * video frozen *and* silent, so fall back to muted playback and unmute on the
+ * first interaction.
+ */
+function playRemote(video: HTMLVideoElement): void {
+  const hint = $<HTMLButtonElement>("btn-unmute-remote");
+  video.muted = false;
+  video.play().then(
+    () => (hint.hidden = true),
+    () => {
+      video.muted = true;
+      void video.play().catch(() => undefined);
+      hint.hidden = false;
+      const unmute = () => {
+        removeEventListener("pointerdown", unmute, true);
+        removeEventListener("keydown", unmute, true);
+        video.muted = false;
+        hint.hidden = true;
+        void video.play().catch(() => undefined);
+      };
+      addEventListener("pointerdown", unmute, true);
+      addEventListener("keydown", unmute, true);
+    },
+  );
+}
+
 export function setRemoteVideoStream(stream: MediaStream): void {
   const video = $<HTMLVideoElement>("remote-video");
   if (video.srcObject !== stream) {
     video.srcObject = stream;
     frames.count = -1;
+    playRemote(video);
   }
   watchStream("remote", stream);
+}
+
+const MEDIA_NOTE = {
+  both: "The call begins when they open it. Your camera and microphone are on.",
+  audio: "The call begins when they open it. It starts as an audio call; you can turn your camera on once it begins.",
+  video: "The call begins when they open it. Your camera is on; microphone is off.",
+  none: "The call begins when they open it. Camera and mic are off — you can still listen, watch, and share your screen.",
+};
+
+export function bindCameraToggle(onToggle: (enable: boolean) => Promise<boolean>): void {
+  const btn = $<HTMLButtonElement>("btn-toggle-camera");
+  if (typeof navigator.mediaDevices?.getUserMedia !== "function") {
+    btn.hidden = true;
+    return;
+  }
+  btn.addEventListener("click", async () => {
+    const enable = btn.getAttribute("aria-pressed") !== "true";
+    btn.disabled = true;
+    const on = await onToggle(enable).catch(() => false);
+    btn.disabled = false;
+    if (enable && !on) btn.title = "Camera unavailable — check browser permissions";
+  });
+}
+
+/** Reflects which local devices are on (calls start audio-only; both are optional). */
+export function setLocalMediaState(audio: boolean, video: boolean): void {
+  const cam = $<HTMLButtonElement>("btn-toggle-camera");
+  cam.setAttribute("aria-pressed", String(video));
+  cam.setAttribute("aria-label", video ? "Turn camera off" : "Turn camera on");
+  if (video) cam.removeAttribute("title");
+  $("icon-camera-on").classList.toggle("hidden", !video);
+  $("icon-camera-off").classList.toggle("hidden", video);
+
+  const btn = $<HTMLButtonElement>("btn-toggle-mic");
+  const muted = btn.getAttribute("aria-pressed") === "true";
+  btn.disabled = !audio;
+  btn.setAttribute("aria-label", !audio ? "No microphone available" : muted ? "Unmute microphone" : "Mute microphone");
+  eachTile("local", (el) => el.toggleAttribute("data-muted", !audio || muted));
+  $("preview-empty-label").textContent = "Camera off";
+  $("waiting-media-note").textContent = MEDIA_NOTE[audio && video ? "both" : audio ? "audio" : video ? "video" : "none"];
 }
 
 export function setEndedMessage(title: string, message: string): void {

@@ -4,6 +4,7 @@ import { CallSession, isRoomFull, type CallEvent } from "./call";
 import { listDevices } from "./rtc";
 import { bindInstallButton, registerServiceWorker } from "./pwa";
 import {
+  bindCameraToggle,
   bindCopyLink,
   bindDevicePicker,
   bindEndCall,
@@ -16,6 +17,7 @@ import {
   setCallRoomCode,
   setEndedMessage,
   setLandingError,
+  setLocalMediaState,
   setLocalPreview,
   setLocalVideoStream,
   setNetworkIndicator,
@@ -74,6 +76,9 @@ function handleCallEvent(event: CallEvent): void {
       setLocalPreview(event.stream);
       setLocalVideoStream(event.stream);
       break;
+    case "media":
+      setLocalMediaState(event.audio, event.video);
+      break;
     case "remote-stream":
       setRemoteVideoStream(event.stream);
       break;
@@ -113,11 +118,7 @@ function handleCallEvent(event: CallEvent): void {
       break;
     case "failed":
       stopCallDurationTimer();
-      if (event.reason === "camera-lost") {
-        setEndedMessage("Camera required", "The camera stopped. Connect your camera, then try again.");
-      } else {
-        setEndedMessage("Connection failed", "Could not establish a connection. Please try again.");
-      }
+      setEndedMessage("Connection failed", "Could not establish a connection. Please try again.");
       showView("ended");
       break;
     case "screen-share-started":
@@ -143,9 +144,11 @@ async function enterRoom(roomId: string): Promise<void> {
 
   activeSession = new CallSession(roomId, handleCallEvent);
   try {
+    // Never fails on denied/missing camera or mic — both are optional.
     await activeSession.start();
   } catch {
-    setEndedMessage("Camera and microphone required", "Please allow camera and microphone access, then try again.");
+    activeSession.stop();
+    setEndedMessage("Could not start the call", "Something went wrong while starting the meeting. Please try again.");
     showView("ended");
   }
 }
@@ -168,6 +171,7 @@ function bindCallControls(): void {
     // Track enable/disable is wired via the local stream captured in main-scope session.
     activeSession?.setMicEnabled(enabled);
   });
+  bindCameraToggle(async (enable) => (await activeSession?.setCameraEnabled(enable)) ?? false);
   bindEndCall(() => {
     activeSession?.stop();
     location.href = "/";

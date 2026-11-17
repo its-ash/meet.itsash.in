@@ -12,10 +12,12 @@ import {
   MAX_RENEGOTIATIONS,
 } from "./config";
 import {
+  AudioMixer,
   adaptVideoBitrate,
   applyCodecPreferences,
   createPeerConnection,
   getCameraTrack,
+  getIceServers,
   getInitialMedia,
   getMicStream,
   getOutgoingVideoResolution,
@@ -63,6 +65,8 @@ export type CallEvent =
   | { type: "network-stats"; stats: NetworkStats }
   | { type: "video-resolution"; width: number; height: number }
   | { type: "local-stream"; stream: MediaStream }
+  /** Which local capture devices are currently available (both are optional). */
+  | { type: "media"; audio: boolean; video: boolean }
   | { type: "remote-stream"; stream: MediaStream }
   | { type: "screen-share-started" }
   | { type: "screen-share-stopped" };
@@ -97,8 +101,10 @@ export class CallSession {
   private videoSender: RTCRtpSender | null = null;
   private audioSender: RTCRtpSender | null = null;
   private cameraTrack: MediaStreamTrack | null = null;
+  private audioMixer: AudioMixer | null = null;
   private videoDeviceId: string | undefined;
   private micEnabled = true;
+  private cameraBusy = false;
 
   constructor(
     private readonly roomId: string,
@@ -106,11 +112,17 @@ export class CallSession {
   ) {}
 
   async start(): Promise<void> {
-    await ensureWasm();
+    // Warm the ICE server cache while the permission prompt is open.
+    void getIceServers();
+    const [, stream] = await Promise.all([ensureWasm(), getInitialMedia()]);
+    if (this.closed) {
+      for (const t of stream.getTracks()) t.stop();
+      return;
+    }
 
-    this.localStream = await getInitialMedia();
-    this.setCameraTrack(this.localStream.getVideoTracks()[0]);
-    this.onEvent({ type: "local-stream", stream: this.localStream });
+    this.localStream = stream;
+    this.onEvent({ type: "local-stream", stream });
+    this.emitMedia();
 
     this.session = new SignalSession(this.roomId);
 
@@ -155,9 +167,14 @@ export class CallSession {
     }
     this.pc = pc;
 
+    // Always negotiate both an audio and a video m-line, even without a mic
+    // or camera: otherwise the offer has no slot for the partner's media and
+    // a camera-less/mic-less user would never hear or see them.
     const stream = this.localStream!;
-    const audioTrack = stream.getAudioTracks()[0];
-    this.audioSender = audioTrack ? pc.addTrack(audioTrack, stream) : null;
+    this.audioSender = pc.addTransceiver(this.outgoingAudioTrack() ?? "audio", {
+      direction: "sendrecv",
+      streams: [stream],
+    }).sender;
     this.videoSender = pc.addTransceiver(this.outgoingVideoTrack() ?? "video", {
       direction: "sendrecv",
       streams: [stream],
@@ -192,13 +209,58 @@ export class CallSession {
     return this.screenStream?.getVideoTracks()[0] ?? this.cameraTrack;
   }
 
-  private async adoptVideoTransceiver(pc: RTCPeerConnection): Promise<void> {
-    const t = pc.getTransceivers().find((x) => x.mid !== null && x.receiver.track.kind === "video");
-    if (!t || t.sender === this.videoSender) return;
-    t.direction = "sendrecv";
-    await t.sender.replaceTrack(this.outgoingVideoTrack());
-    if (this.localStream) t.sender.setStreams?.(this.localStream);
-    this.videoSender = t.sender;
+  private micTrack(): MediaStreamTrack | null {
+    return this.localStream?.getAudioTracks()[0] ?? null;
+  }
+
+  private outgoingAudioTrack(): MediaStreamTrack | null {
+    return this.audioMixer?.track ?? this.micTrack();
+  }
+
+  private emitMedia(): void {
+    this.onEvent({ type: "media", audio: !!this.micTrack(), video: !!this.cameraTrack });
+  }
+
+  /**
+   * Recomputes the outgoing audio: the mic alone, or mic + shared-screen
+   * audio mixed together while a screen share with audio is active.
+   */
+  private async routeAudio(): Promise<void> {
+    this.audioMixer?.close();
+    this.audioMixer = null;
+    const screenAudio = this.screenStream?.getAudioTracks().find((t) => t.readyState === "live");
+    if (screenAudio) {
+      const mic = this.micTrack();
+      try {
+        this.audioMixer = new AudioMixer(mic ? [mic, screenAudio] : [screenAudio]);
+      } catch {
+        this.audioMixer = null;
+      }
+      // Mixer unavailable: share the screen audio as-is rather than nothing.
+      if (!this.audioMixer) {
+        await this.audioSender?.replaceTrack(screenAudio);
+        return;
+      }
+    }
+    await this.audioSender?.replaceTrack(this.outgoingAudioTrack());
+  }
+
+  /**
+   * Transceivers we added before receiving an offer are not reused by
+   * setRemoteDescription; switch our outgoing tracks onto the ones the
+   * offer created so the answer actually sends media.
+   */
+  private async adoptTransceivers(pc: RTCPeerConnection): Promise<void> {
+    for (const kind of ["audio", "video"] as const) {
+      const t = pc.getTransceivers().find((x) => x.mid !== null && x.receiver.track.kind === kind);
+      const current = kind === "audio" ? this.audioSender : this.videoSender;
+      if (!t || t.sender === current) continue;
+      t.direction = "sendrecv";
+      await t.sender.replaceTrack(kind === "audio" ? this.outgoingAudioTrack() : this.outgoingVideoTrack());
+      if (this.localStream) t.sender.setStreams?.(this.localStream);
+      if (kind === "audio") this.audioSender = t.sender;
+      else this.videoSender = t.sender;
+    }
   }
 
   private emitVideoResolution(): void {
@@ -433,7 +495,7 @@ export class CallSession {
       }
       case "apply-offer": {
         await this.pc.setRemoteDescription({ type: "offer", sdp: payload });
-        await this.adoptVideoTransceiver(this.pc);
+        await this.adoptTransceivers(this.pc);
         await applyCodecPreferences(this.pc);
         await this.flushPendingIce();
         const sdp = tuneSdp((await this.pc.createAnswer()).sdp ?? "");
@@ -474,9 +536,22 @@ export class CallSession {
 
   private setCameraTrack(track: MediaStreamTrack): void {
     this.cameraTrack = track;
+    // Camera unplugged/revoked mid-call: keep the call going without video.
     track.onended = () => {
-      if (!this.closed && this.cameraTrack === track) this.fail("camera-lost");
+      if (!this.closed && this.cameraTrack === track) void this.dropCamera();
     };
+  }
+
+  private async dropCamera(): Promise<void> {
+    const track = this.cameraTrack;
+    if (!track) return;
+    track.onended = null;
+    this.cameraTrack = null;
+    this.localStream?.removeTrack(track);
+    track.stop();
+    if (!this.screenStream) await this.videoSender?.replaceTrack(null);
+    if (this.localStream) this.onEvent({ type: "local-stream", stream: this.localStream });
+    this.emitMedia();
   }
 
   private async useCameraTrack(track: MediaStreamTrack): Promise<void> {
@@ -494,33 +569,65 @@ export class CallSession {
     this.localStream?.addTrack(track);
     if (!this.screenStream) await this.videoSender?.replaceTrack(track);
     if (this.localStream) this.onEvent({ type: "local-stream", stream: this.localStream });
+    this.emitMedia();
     this.emitVideoResolution();
   }
 
+  /**
+   * Turns the camera on or off. Off fully releases the device (camera light
+   * goes out); the video slot stays negotiated, so no renegotiation is
+   * needed either way. Resolves to whether the camera is on afterwards.
+   */
+  async setCameraEnabled(enabled: boolean): Promise<boolean> {
+    if (this.closed || this.cameraBusy || enabled === !!this.cameraTrack) return !!this.cameraTrack;
+    this.cameraBusy = true;
+    try {
+      if (enabled) await this.useCameraTrack(await getCameraTrack(this.videoDeviceId));
+      else await this.dropCamera();
+    } catch {
+      // Permission denied / no camera / camera busy — stay audio-only.
+      this.emitMedia();
+    } finally {
+      this.cameraBusy = false;
+    }
+    return !!this.cameraTrack;
+  }
+
+  /** Switches camera / mic. Picking a camera while it is off only remembers the choice. */
   async switchDevices(constraints: DeviceConstraints): Promise<void> {
     if (constraints.videoDeviceId) {
       this.videoDeviceId = constraints.videoDeviceId;
-      if (this.cameraTrack) await this.useCameraTrack(await getCameraTrack(this.videoDeviceId));
+      if (this.cameraTrack && !this.cameraBusy) await this.useCameraTrack(await getCameraTrack(this.videoDeviceId));
     }
-    if (constraints.audioDeviceId && this.localStream) {
+    if (constraints.audioDeviceId && this.localStream && !this.closed) {
       const [track] = (await getMicStream(constraints.audioDeviceId)).getAudioTracks();
+      if (this.closed) {
+        track.stop();
+        return;
+      }
       track.enabled = this.micEnabled;
       for (const old of this.localStream.getAudioTracks()) {
         this.localStream.removeTrack(old);
         old.stop();
       }
       this.localStream.addTrack(track);
-      await this.audioSender?.replaceTrack(track);
+      await this.routeAudio();
+      this.emitMedia();
     }
   }
 
   async startScreenShare(): Promise<void> {
-    if (this.screenStream) return;
+    if (this.screenStream || this.closed) return;
     const screenStream = await getScreenStream();
+    if (this.closed || this.screenStream) {
+      for (const t of screenStream.getTracks()) t.stop();
+      return;
+    }
     this.screenStream = screenStream;
 
     const [screenTrack] = screenStream.getVideoTracks();
     await this.videoSender?.replaceTrack(screenTrack);
+    if (screenStream.getAudioTracks().length) await this.routeAudio();
 
     screenTrack.onended = () => void this.stopScreenShare();
     this.onEvent({ type: "screen-share-started" });
@@ -529,12 +636,14 @@ export class CallSession {
 
   async stopScreenShare(): Promise<void> {
     if (!this.screenStream) return;
+    const hadAudio = this.screenStream.getAudioTracks().length > 0;
     for (const track of this.screenStream.getTracks()) {
       track.stop();
     }
     this.screenStream = null;
 
     await this.videoSender?.replaceTrack(this.cameraTrack);
+    if (hadAudio) await this.routeAudio();
     this.onEvent({ type: "screen-share-stopped" });
     this.emitVideoResolution();
   }
@@ -564,5 +673,7 @@ export class CallSession {
     for (const track of this.screenStream?.getTracks() ?? []) {
       track.stop();
     }
+    this.audioMixer?.close();
+    this.audioMixer = null;
   }
 }
