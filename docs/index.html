@@ -13,8 +13,8 @@
 <meta name="apple-mobile-web-app-capable" content="yes" />
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
 <meta name="apple-mobile-web-app-title" content="Meet" />
-  <script type="module" crossorigin src="/assets/index-BJLExcZA.js"></script>
-  <link rel="stylesheet" crossorigin href="/assets/index-D6zY4bzF.css">
+  <script type="module" crossorigin src="/assets/index-CejDKUVt.js"></script>
+  <link rel="stylesheet" crossorigin href="/assets/index-tOLUHbzX.css">
 </head>
 <body class="font-sans antialiased h-full">
 
@@ -182,8 +182,17 @@
   </div>
 </main>
 
-<main id="view-call" class="surface-dark h-dvh w-full overflow-hidden flex flex-col" hidden>
-  <header class="flex items-center justify-between gap-3 px-3 md:px-6 shrink-0 h-14 md:h-16 mt-[env(safe-area-inset-top)]">
+<main id="view-call" class="surface-dark relative h-dvh w-full overflow-hidden bg-black" hidden>
+  <div id="remote-tile" class="tile tile-full absolute inset-0" data-video="off">
+    <video id="remote-video" autoplay playsinline></video>
+    <div class="tile-empty" style="--avatar:clamp(6rem,26vmin,10rem)">
+      <span class="avatar"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4.5 20.5c.6-3.8 3.8-6.5 7.5-6.5s6.9 2.7 7.5 6.5"/></svg></span>
+      <span class="text-base font-medium">Partner</span>
+      <span class="-mt-2 text-xs text-fog">Camera off</span>
+    </div>
+  </div>
+
+  <header class="overlay overlay-top absolute inset-x-0 top-0 z-30 flex items-center justify-between gap-3 px-3 md:px-6 pt-[max(0.75rem,env(safe-area-inset-top))] pb-8">
     <div class="flex items-center gap-3 min-w-0">
       <a href="/" class="hidden sm:inline-flex items-center gap-2 font-semibold tracking-tight rounded-md" aria-label="Meet home"><span class="dot bg-accent"></span>meet</a>
       <span class="chip"><span class="text-fog">Room</span><span id="call-room-code" class="uppercase tracking-[0.2em]"></span></span>
@@ -198,28 +207,17 @@
     </div>
   </header>
 
-  <div class="relative flex-1 min-h-0 px-2 md:px-6">
-    <div id="remote-tile" class="tile h-full w-full" data-video="off">
-      <video id="remote-video" autoplay playsinline></video>
-      <div class="tile-empty" style="--avatar:clamp(6rem,26vmin,10rem)">
-        <span class="avatar"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4.5 20.5c.6-3.8 3.8-6.5 7.5-6.5s6.9 2.7 7.5 6.5"/></svg></span>
-        <span class="text-base font-medium">Partner</span>
-        <span class="-mt-2 text-xs text-fog">Waiting for video</span>
-      </div>
-      <span class="tile-tag tag-video">Partner</span>
-      <button id="btn-unmute-remote" type="button" class="chip absolute z-30 top-3 left-1/2 -translate-x-1/2" hidden>Tap to hear your partner</button>
-    </div>
+  <button id="btn-unmute-remote" type="button" class="chip absolute z-30 top-[calc(env(safe-area-inset-top)+4rem)] left-1/2 -translate-x-1/2" hidden>Tap to hear your partner</button>
 
-    <div id="local-tile" class="tile tile-self absolute z-20 right-4 bottom-2 md:right-10 md:bottom-4 w-28 sm:w-44 md:w-60 aspect-[3/4] sm:aspect-video" data-video="off">
+  <div id="local-tile" class="tile tile-self absolute z-20 right-3 md:right-6 bottom-[calc(env(safe-area-inset-bottom)+6.5rem)] md:bottom-[calc(env(safe-area-inset-bottom)+7.5rem)] w-28 sm:w-44 md:w-60 aspect-[3/4] sm:aspect-video" data-video="off">
       <video id="local-video" class="-scale-x-100" autoplay muted playsinline></video>
       <div class="tile-empty" style="--avatar:clamp(2.75rem,8vw,4rem)">
         <span class="avatar"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4.5 20.5c.6-3.8 3.8-6.5 7.5-6.5s6.9 2.7 7.5 6.5"/></svg></span>
       </div>
       <span class="tile-tag">You<span class="tile-share">· presenting</span><span class="tile-mute" aria-label="Microphone muted" role="img"><svg class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 9v3a3 3 0 0 0 5.12 2.12M12.9 4.16A3 3 0 0 1 15 7v2M5 10a7 7 0 0 0 10.54 6.04M17.9 14.02A7 7 0 0 0 19 10M12 17v4M3 3l18 18"/></svg></span></span>
-    </div>
   </div>
 
-  <div class="shrink-0 flex flex-col items-center gap-2 px-3 pt-3 md:pt-4 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
+  <div class="overlay overlay-bottom absolute inset-x-0 bottom-0 z-30 flex flex-col items-center px-3 pt-10 pb-[max(1rem,env(safe-area-inset-bottom))]">
     <div role="group" aria-label="Call controls" class="relative flex items-start justify-center gap-2 sm:gap-4">
       <button id="btn-toggle-mic" type="button" aria-label="Mute microphone" aria-pressed="false" class="ctl ctl-mic">
         <span class="ctl-icon">
@@ -264,7 +262,6 @@
         <span class="ctl-label" aria-hidden="true">Leave</span>
       </button>
     </div>
-    <p id="call-footer-note" class="hidden md:block text-[11px] text-fog">Direct peer-to-peer · media never touches our server</p>
   </div>
 </main>
 

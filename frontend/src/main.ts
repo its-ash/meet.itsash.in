@@ -1,5 +1,5 @@
 import init, { normalize_room_id } from "./wasm/wasm_signal.js";
-import { SIGNAL_NEW_ROOM_URL } from "./config";
+import { FULL_ROOM_POLL_MS, SIGNAL_NEW_ROOM_URL } from "./config";
 import { CallSession, isRoomFull, type CallEvent } from "./call";
 import { listDevices } from "./rtc";
 import { bindInstallButton, registerServiceWorker } from "./pwa";
@@ -36,6 +36,7 @@ const pipSupported =
   typeof document !== "undefined" && ("pictureInPictureEnabled" in document || "documentPictureInPicture" in window);
 
 let activeSession: CallSession | null = null;
+let enterToken = 0;
 let lastResolution: { width: number; height: number } | null = null;
 
 function currentRoomIdFromPath(): string | null {
@@ -116,11 +117,6 @@ function handleCallEvent(event: CallEvent): void {
     case "peer-left":
       // The "waiting" event that follows drives the UI back to the waiting view.
       break;
-    case "failed":
-      stopCallDurationTimer();
-      setEndedMessage("Connection failed", "Could not establish a connection. Please try again.");
-      showView("ended");
-      break;
     case "screen-share-started":
       sharingScreen = true;
       setShareButtonState(true);
@@ -132,22 +128,32 @@ function handleCallEvent(event: CallEvent): void {
   }
 }
 
+/** Joins a room. A full room is polled, so the meeting opens as soon as a slot frees. */
 async function enterRoom(roomId: string): Promise<void> {
-  if (await isRoomFull(roomId)) {
+  const token = ++enterToken;
+  activeSession?.stop();
+  activeSession = null;
+
+  while (await isRoomFull(roomId)) {
+    if (token !== enterToken) return;
     showView("full");
-    return;
+    await new Promise((resolve) => setTimeout(resolve, FULL_ROOM_POLL_MS));
+    if (token !== enterToken) return;
   }
+  if (token !== enterToken) return;
 
   setRoomLink(roomId);
   setCallRoomCode(roomId);
   showView("waiting");
 
-  activeSession = new CallSession(roomId, handleCallEvent);
+  const session = new CallSession(roomId, handleCallEvent);
+  activeSession = session;
   try {
     // Never fails on denied/missing camera or mic — both are optional.
-    await activeSession.start();
+    await session.start();
   } catch {
-    activeSession.stop();
+    session.stop();
+    if (activeSession !== session) return;
     setEndedMessage("Could not start the call", "Something went wrong while starting the meeting. Please try again.");
     showView("ended");
   }

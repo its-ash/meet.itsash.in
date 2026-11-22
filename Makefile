@@ -3,7 +3,11 @@ run:
 	cd frontend && npm run dev
 
 build:
+	rm -rf frontend/src/wasm frontend/src/enhancer
 	cd frontend/wasm-signal && wasm-pack build --target web --out-dir ../src/wasm
+	cd frontend/wasm-audio && cargo build --release --target wasm32-unknown-unknown
+	mkdir -p frontend/src/enhancer
+	cp frontend/wasm-audio/target/wasm32-unknown-unknown/release/wasm_audio.wasm frontend/src/enhancer/voice.wasm
 	cd frontend && npm run build
 	rm -rf docs
 	cp -r frontend/dist docs

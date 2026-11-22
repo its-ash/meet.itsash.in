@@ -7,6 +7,8 @@ const REPLACED_CLOSE_CODE = 4001;
 const RESERVATION_TTL_MS = 60_000;
 const RESERVED_AT_KEY = "reservedAt";
 const SID_RE = /^[a-z0-9-]{8,64}$/i;
+const PING = JSON.stringify({ type: "ping" });
+const PONG = JSON.stringify({ type: "pong" });
 
 interface SocketAttachment {
   lastPingMs: number;
@@ -25,11 +27,19 @@ export interface Env {
 }
 
 export class RoomSignal extends DurableObject<Env> {
+  constructor(ctx: DurableObjectState, env: Env) {
+    super(ctx, env);
+    // The runtime answers pings itself without waking the DO; clients use
+    // the pong to detect a dead socket fast. Liveness is read back through
+    // getWebSocketAutoResponseTimestamp (see lastSeen).
+    ctx.setWebSocketAutoResponse(new WebSocketRequestResponsePair(PING, PONG));
+  }
+
   async getWebSocketCount(sid: string | null = null): Promise<number> {
     const now = Date.now();
     return this.liveSockets().filter((s) => {
       const a = this.readAttachment(s);
-      return !(sid !== null && a?.sid === sid) && now - (a?.lastPingMs ?? now) < IDLE_THRESHOLD_MS;
+      return !(sid !== null && a?.sid === sid) && now - this.lastSeen(s, now) < IDLE_THRESHOLD_MS;
     }).length;
   }
 
@@ -84,7 +94,10 @@ export class RoomSignal extends DurableObject<Env> {
   async webSocketMessage(ws: WebSocket, message: string | ArrayBuffer): Promise<void> {
     if (this.readAttachment(ws)?.evicted) return;
     this.touch(ws);
-    if (typeof message === "string" && this.isPing(message)) return;
+    if (typeof message === "string" && this.isPing(message)) {
+      this.safeSend(ws, PONG);
+      return;
+    }
 
     const sockets = this.liveSockets();
     if (sockets.length < 2) return;
@@ -140,7 +153,7 @@ export class RoomSignal extends DurableObject<Env> {
     let evictedAny = false;
     for (const socket of this.liveSockets()) {
       const a = this.readAttachment(socket);
-      const lastPingMs = a?.lastPingMs ?? now;
+      const lastPingMs = this.lastSeen(socket, now);
       const replaced = sid !== null && a?.sid === sid;
       if (!replaced && now - lastPingMs < IDLE_THRESHOLD_MS) continue;
       try {
@@ -158,6 +171,11 @@ export class RoomSignal extends DurableObject<Env> {
     return this.ctx
       .getWebSockets()
       .filter((s) => s.readyState === WebSocket.OPEN && !this.readAttachment(s)?.evicted);
+  }
+
+  private lastSeen(ws: WebSocket, now: number): number {
+    const auto = this.ctx.getWebSocketAutoResponseTimestamp(ws)?.getTime() ?? 0;
+    return Math.max(this.readAttachment(ws)?.lastPingMs ?? now, auto);
   }
 
   private readAttachment(ws: WebSocket): SocketAttachment | null {

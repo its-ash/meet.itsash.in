@@ -1,8 +1,15 @@
-import { FALLBACK_ICE_SERVERS, SIGNAL_TURN_CREDENTIALS_URL } from "./config";
+import { ENHANCER_READY_MS, FALLBACK_ICE_SERVERS, SIGNAL_TURN_CREDENTIALS_URL } from "./config";
+import enhancerWasmUrl from "./enhancer/voice.wasm?url";
+import enhancerWorkletUrl from "./enhancer-worklet.ts?worker&url";
 
 const VIDEO_CODECS = ["video/AV1", "video/H265", "video/VP9", "video/H264", "video/VP8"];
-const AUDIO_CODECS = ["audio/opus"];
+// RED (RFC 2198) carries the previous Opus frame in each packet: one lost
+// packet costs no audio at all. Opus stays next for peers without RED.
+const AUDIO_CODECS = ["audio/red", "audio/opus"];
 const OPUS_FMTP: Record<string, string> = { useinbandfec: "1", usedtx: "1" };
+const ENHANCER = "voice-enhancer";
+const ENHANCER_RATE = 48_000;
+const WAKE_EVENTS = ["pointerdown", "keydown", "touchend", "visibilitychange"] as const;
 
 let videoOrder: Promise<string[]> | null = null;
 
@@ -69,12 +76,21 @@ export interface DeviceConstraints {
   audioDeviceId?: string;
 }
 
-const audioConstraints = (audioDeviceId?: string): MediaTrackConstraints => ({
+// With the Rust enhancer active, browser noise suppression and AGC are off:
+// RNNoise and the leveler do that job better, and stacking both pumps.
+const audioConstraints = (audioDeviceId?: string, enhanced = false): MediaTrackConstraints => ({
   echoCancellation: true,
-  noiseSuppression: true,
-  autoGainControl: true,
+  noiseSuppression: !enhanced,
+  autoGainControl: !enhanced,
+  channelCount: { ideal: 1 },
+  sampleRate: { ideal: ENHANCER_RATE },
   ...(audioDeviceId ? { deviceId: { exact: audioDeviceId } } : {}),
 });
+
+/** Turns browser noise suppression and AGC back on when the enhancer cannot run. */
+export async function restoreBrowserVoiceProcessing(track: MediaStreamTrack | null): Promise<void> {
+  await track?.applyConstraints({ ...track.getConstraints(), noiseSuppression: true, autoGainControl: true }).catch(() => undefined);
+}
 
 // Ideal, not exact: lets the browser pick the sensor's natural
 // portrait/landscape shape (important on mobile) instead of forcing
@@ -87,8 +103,8 @@ const videoConstraints = (videoDeviceId?: string): MediaTrackConstraints => ({
   ...(videoDeviceId ? { deviceId: { exact: videoDeviceId } } : {}),
 });
 
-export async function getMicStream(audioDeviceId?: string): Promise<MediaStream> {
-  return navigator.mediaDevices.getUserMedia({ audio: audioConstraints(audioDeviceId) });
+export async function getMicStream(audioDeviceId?: string, enhanced = false): Promise<MediaStream> {
+  return navigator.mediaDevices.getUserMedia({ audio: audioConstraints(audioDeviceId, enhanced) });
 }
 
 async function tryGetUserMedia(constraints: MediaStreamConstraints): Promise<MediaStream | null> {
@@ -100,13 +116,22 @@ async function tryGetUserMedia(constraints: MediaStreamConstraints): Promise<Med
 }
 
 /**
- * Calls start audio-only: only the microphone is requested up front (the
- * camera is opt-in via the camera button). The mic is optional too —
- * resolves to an empty stream if it is denied or missing, never rejects.
+ * Asks for camera and mic permission up front, then stops the camera so the
+ * call starts audio-only. The camera button can turn it on later without a
+ * new prompt. Never rejects: denied or missing devices give fewer tracks.
  */
-export async function getInitialMedia(): Promise<MediaStream> {
+export async function getInitialMedia(enhanced = false): Promise<MediaStream> {
   if (!navigator.mediaDevices?.getUserMedia) return new MediaStream();
-  return (await tryGetUserMedia({ audio: audioConstraints() })) ?? new MediaStream();
+  const audio = audioConstraints(undefined, enhanced);
+  const both = await tryGetUserMedia({ audio, video: videoConstraints() });
+  const parts = both
+    ? [both]
+    : (await Promise.all([
+        tryGetUserMedia({ audio }),
+        tryGetUserMedia({ video: videoConstraints() }),
+      ])).filter((s): s is MediaStream => s !== null);
+  for (const t of parts.flatMap((s) => s.getVideoTracks())) t.stop();
+  return new MediaStream(parts.flatMap((s) => s.getAudioTracks()));
 }
 
 export async function getCameraTrack(videoDeviceId?: string): Promise<MediaStreamTrack> {
@@ -131,31 +156,175 @@ export async function getScreenStream(): Promise<MediaStream> {
   return stream;
 }
 
-/**
- * Mixes the microphone and screen-share audio into one track so both reach
- * the partner over the single audio sender (no renegotiation needed). The
- * mic source follows its track's `enabled` flag, so muting the mic still
- * leaves the shared audio audible.
- */
-export class AudioMixer {
-  private readonly ctx = new AudioContext();
-  private readonly dest = this.ctx.createMediaStreamDestination();
+let enhancerBytes: Promise<ArrayBuffer | null> | null = null;
 
-  constructor(tracks: MediaStreamTrack[]) {
-    for (const track of tracks) {
-      this.ctx.createMediaStreamSource(new MediaStream([track])).connect(this.dest);
+/** Fetches the Rust voice enhancer (wasm) once; null when this browser cannot run it. */
+export function loadEnhancer(): Promise<ArrayBuffer | null> {
+  if (typeof AudioWorkletNode === "undefined" || typeof WebAssembly !== "object") return Promise.resolve(null);
+  return (enhancerBytes ??= fetch(enhancerWasmUrl)
+    .then((res) => (res.ok ? res.arrayBuffer() : null))
+    .then((buf) => (buf && WebAssembly.validate(buf) ? buf : null))
+    .catch(() => null));
+}
+
+async function createEnhancer(ctx: AudioContext, bytes: ArrayBuffer): Promise<AudioWorkletNode | null> {
+  if (!ctx.audioWorklet) return null;
+  try {
+    await ctx.audioWorklet.addModule(enhancerWorkletUrl);
+    const node = new AudioWorkletNode(ctx, ENHANCER, {
+      numberOfInputs: 1,
+      numberOfOutputs: 1,
+      outputChannelCount: [1],
+      channelCount: 1,
+      channelCountMode: "explicit",
+      channelInterpretation: "speakers",
+      processorOptions: { bytes },
+    });
+    // The processor reports whether the wasm compiled. No report in time
+    // (render thread not started yet) counts as success; a later trap is
+    // caught by onprocessorerror.
+    const ok = await new Promise<boolean>((resolve) => {
+      const timer = setTimeout(() => resolve(true), ENHANCER_READY_MS);
+      node.port.onmessage = (e: MessageEvent<{ ok?: boolean }>) => {
+        clearTimeout(timer);
+        resolve(e.data?.ok === true);
+      };
+    });
+    node.port.onmessage = null;
+    if (!ok) node.disconnect();
+    return ok ? node : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * One persistent audio graph for the outgoing audio:
+ *   mic → Rust voice enhancer (RNNoise, gate, leveler, compressor, limiter) → out
+ *   screen-share audio (unprocessed) → out
+ * Both reach the partner over the single audio sender, so screen audio needs
+ * no renegotiation. `track` is null while the context is not running (autoplay
+ * policy); the caller then sends the raw mic, and `onChange` fires when that
+ * flips. Muting the mic track mutes only the voice, not the shared audio.
+ */
+export class AudioPipeline {
+  private readonly dest: MediaStreamAudioDestinationNode;
+  private mic: MediaStreamAudioSourceNode | null = null;
+  private screen: MediaStreamAudioSourceNode | null = null;
+
+  private readonly wake = (): void => {
+    if (this.ctx.state === "suspended" || (this.ctx.state as string) === "interrupted") {
+      void this.ctx.resume().catch(() => undefined);
     }
-    void this.ctx.resume().catch(() => undefined);
+  };
+
+  private constructor(
+    private readonly ctx: AudioContext,
+    private fx: AudioWorkletNode | null,
+    private readonly onChange: () => void,
+  ) {
+    this.dest = ctx.createMediaStreamDestination();
+    if (fx) {
+      fx.connect(this.dest);
+      fx.onprocessorerror = () => this.bypass();
+    }
+    ctx.onstatechange = () => onChange();
+    for (const e of WAKE_EVENTS) addEventListener(e, this.wake, true);
+    this.wake();
   }
 
-  get track(): MediaStreamTrack {
-    return this.dest.stream.getAudioTracks()[0];
+  /** Never rejects; null when Web Audio is unusable here. */
+  static async create(
+    bytes: ArrayBuffer | null,
+    mic: MediaStreamTrack | null,
+    onChange: () => void,
+  ): Promise<AudioPipeline | null> {
+    if (typeof AudioContext === "undefined") return null;
+    // RNNoise runs at 48 kHz. Some browsers refuse a mic source whose rate
+    // differs from the context rate, so fall back to the device rate.
+    for (const sampleRate of [ENHANCER_RATE, undefined]) {
+      let ctx: AudioContext | null = null;
+      try {
+        ctx = new AudioContext({ latencyHint: "interactive", sampleRate });
+        const pipeline = new AudioPipeline(ctx, bytes ? await createEnhancer(ctx, bytes) : null, onChange);
+        if (pipeline.setMic(mic)) return pipeline;
+        pipeline.close();
+      } catch {
+        void ctx?.close().catch(() => undefined);
+      }
+    }
+    return null;
+  }
+
+  /** Processed outgoing track, or null when the caller must send raw audio. */
+  get track(): MediaStreamTrack | null {
+    if (this.ctx.state !== "running" || (!this.mic && !this.screen)) return null;
+    return this.dest.stream.getAudioTracks()[0] ?? null;
+  }
+
+  get enhanced(): boolean {
+    return this.fx !== null;
+  }
+
+  setMic(track: MediaStreamTrack | null): boolean {
+    this.mic?.disconnect();
+    this.mic = null;
+    if (!track) return true;
+    try {
+      this.mic = this.ctx.createMediaStreamSource(new MediaStream([track]));
+      this.mic.connect(this.fx ?? this.dest);
+      return true;
+    } catch {
+      this.mic = null;
+      return false;
+    }
+  }
+
+  setScreen(track: MediaStreamTrack | null): void {
+    this.screen?.disconnect();
+    this.screen = null;
+    if (!track) return;
+    try {
+      this.screen = this.ctx.createMediaStreamSource(new MediaStream([track]));
+      this.screen.connect(this.dest);
+    } catch {
+      this.screen = null;
+    }
+  }
+
+  private bypass(): void {
+    this.fx?.disconnect();
+    this.fx = null;
+    this.mic?.disconnect();
+    this.mic?.connect(this.dest);
+    this.onChange();
   }
 
   close(): void {
+    for (const e of WAKE_EVENTS) removeEventListener(e, this.wake, true);
+    this.ctx.onstatechange = null;
+    this.mic?.disconnect();
+    this.screen?.disconnect();
+    this.fx?.disconnect();
     for (const t of this.dest.stream.getTracks()) t.stop();
     void this.ctx.close().catch(() => undefined);
   }
+}
+
+type Priority = "very-low" | "low" | "medium" | "high";
+type PriorityEncoding = RTCRtpEncodingParameters & { priority?: Priority; networkPriority?: Priority };
+
+/**
+ * Gives audio the larger share of a congested link and DSCP marking, so
+ * voice stays clear while video degrades first.
+ */
+export async function prioritizeAudio(sender: RTCRtpSender | null): Promise<void> {
+  const params = sender?.getParameters();
+  const encodings = params?.encodings as PriorityEncoding[] | undefined;
+  if (!sender || !params || !encodings?.length) return;
+  if (encodings.every((e) => e.priority === "high" && e.networkPriority === "high")) return;
+  for (const e of encodings) e.priority = e.networkPriority = "high";
+  await sender.setParameters(params).catch(() => undefined);
 }
 
 export interface MediaDeviceOption {

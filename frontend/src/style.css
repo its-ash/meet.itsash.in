@@ -304,6 +304,38 @@ body {
   box-shadow: 0 16px 40px -12px rgb(0 0 0 / 0.7);
 }
 
+.tile-full {
+  border: 0;
+  border-radius: 0;
+  background: #000;
+}
+
+.tile-full[data-speaking][data-video="on"] {
+  box-shadow: none;
+}
+
+.overlay {
+  pointer-events: none;
+}
+
+.overlay > * {
+  pointer-events: auto;
+}
+
+.overlay-top {
+  background: linear-gradient(to bottom, rgb(0 0 0 / 0.55), transparent);
+}
+
+.overlay-bottom {
+  background: linear-gradient(to top, rgb(0 0 0 / 0.65), transparent);
+}
+
+.overlay .chip {
+  background: rgb(13 14 14 / 0.55);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+
 .ctl {
   display: inline-flex;
   flex-direction: column;

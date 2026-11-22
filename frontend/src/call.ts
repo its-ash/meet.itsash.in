@@ -6,13 +6,15 @@ import {
   ICE_RECONNECT_GRACE_MS,
   QUALITY_POLL_INTERVAL_MS,
   RECOVERY_TIMEOUT_MS,
+  MAX_RECOVERY_BACKOFF,
   SOCKET_RETRY_BASE_MS,
   SOCKET_RETRY_MAX_MS,
-  MAX_SOCKET_RETRIES,
-  MAX_RENEGOTIATIONS,
+  SOCKET_DEAD_MS,
+  SOCKET_CONNECT_TIMEOUT_MS,
+  FULL_ROOM_POLL_MS,
 } from "./config";
 import {
-  AudioMixer,
+  AudioPipeline,
   adaptVideoBitrate,
   applyCodecPreferences,
   createPeerConnection,
@@ -22,13 +24,17 @@ import {
   getMicStream,
   getOutgoingVideoResolution,
   getScreenStream,
+  loadEnhancer,
   pollConnectionQuality,
+  prioritizeAudio,
+  restoreBrowserVoiceProcessing,
   tuneSdp,
   type NetworkStats,
   type DeviceConstraints,
 } from "./rtc";
 
 const PING_MESSAGE = JSON.stringify({ type: "ping" });
+const PONG_MESSAGE = JSON.stringify({ type: "pong" });
 const SID_KEY = "meet:sid";
 const REPLACED_CLOSE_CODE = 4001;
 
@@ -61,7 +67,6 @@ export type CallEvent =
   | { type: "peer-left" }
   | { type: "connected" }
   | { type: "reconnecting" }
-  | { type: "failed"; reason: string }
   | { type: "network-stats"; stats: NetworkStats }
   | { type: "video-resolution"; width: number; height: number }
   | { type: "local-stream"; stream: MediaStream }
@@ -83,7 +88,7 @@ export class CallSession {
   private ws: WebSocket | null = null;
   private pc: RTCPeerConnection | null = null;
   private session: SignalSession | null = null;
-  private localStream: MediaStream | null = null;
+  private readonly localStream = new MediaStream();
   private screenStream: MediaStream | null = null;
   private heartbeatTimer: number | null = null;
   private stopQualityPoll: (() => void) | null = null;
@@ -91,6 +96,9 @@ export class CallSession {
   private recoveryTimer: number | null = null;
   private socketRetryTimer: number | null = null;
   private socketRetries = 0;
+  private socketGen = 0;
+  private lastRx = 0;
+  private pongSeen = false;
   private renegotiations = 0;
   private hadSocket = false;
   private isOfferer = false;
@@ -101,7 +109,7 @@ export class CallSession {
   private videoSender: RTCRtpSender | null = null;
   private audioSender: RTCRtpSender | null = null;
   private cameraTrack: MediaStreamTrack | null = null;
-  private audioMixer: AudioMixer | null = null;
+  private audio: AudioPipeline | null = null;
   private videoDeviceId: string | undefined;
   private micEnabled = true;
   private cameraBusy = false;
@@ -111,41 +119,84 @@ export class CallSession {
     private readonly onEvent: CallEventHandler,
   ) {}
 
+  /**
+   * Joins the room at once and attaches the mic when the permission prompt
+   * resolves, so the partner can connect while this side still decides.
+   */
   async start(): Promise<void> {
     // Warm the ICE server cache while the permission prompt is open.
     void getIceServers();
-    const [, stream] = await Promise.all([ensureWasm(), getInitialMedia()]);
-    if (this.closed) {
-      for (const t of stream.getTracks()) t.stop();
-      return;
+    const fx = loadEnhancer();
+    const media = fx.then((bytes) => getInitialMedia(!!bytes));
+    try {
+      await ensureWasm();
+      if (!this.closed) await this.openSignaling();
+    } finally {
+      void media.then(async (stream) => this.attachMedia(stream, await fx)).catch(() => undefined);
     }
+  }
 
-    this.localStream = stream;
-    this.onEvent({ type: "local-stream", stream });
-    this.emitMedia();
-
+  private async openSignaling(): Promise<void> {
     this.session = new SignalSession(this.roomId);
-
     await this.resetPeerConnection();
-    this.connectSocket();
+    if (this.closed) return;
+    this.onEvent({ type: "local-stream", stream: this.localStream });
+    this.emitMedia();
     this.onEvent({ type: "waiting" });
-    this.startHeartbeat();
-
+    this.connectSocket();
+    this.heartbeatTimer = window.setInterval(this.tick, HEARTBEAT_INTERVAL_MS);
     addEventListener("pagehide", this.onPageHide);
     addEventListener("online", this.onWake);
     document.addEventListener("visibilitychange", this.onWake);
   }
 
+  private async attachMedia(stream: MediaStream, bytes: ArrayBuffer | null): Promise<void> {
+    const [mic] = stream.getAudioTracks();
+    if (this.closed || this.micTrack()) {
+      mic?.stop();
+      if (this.closed) return;
+    } else if (mic) {
+      mic.enabled = this.micEnabled;
+      this.localStream.addTrack(mic);
+    }
+
+    const audio = await AudioPipeline.create(bytes, this.micTrack(), () => void this.routeAudio());
+    if (this.closed) {
+      audio?.close();
+      return;
+    }
+    this.audio = audio;
+    if (bytes && !audio?.enhanced) void restoreBrowserVoiceProcessing(this.micTrack());
+    if (this.screenStream) audio?.setScreen(this.screenAudio());
+
+    this.onEvent({ type: "local-stream", stream: this.localStream });
+    this.emitMedia();
+    await this.routeAudio();
+  }
+
   private readonly onPageHide = (): void => this.stop();
 
+  /** Back online or tab visible again: probe the socket, rejoin at once if it is dead. */
   private readonly onWake = (): void => {
     if (this.closed || document.visibilityState !== "visible") return;
-    if (this.ws?.readyState === WebSocket.OPEN) {
-      this.send(PING_MESSAGE);
-    } else if (this.socketRetryTimer !== null) {
-      this.clearSocketRetry();
-      this.socketRetries = 0;
-      this.connectSocket();
+    const ws = this.ws;
+    if (ws?.readyState === WebSocket.OPEN && (!this.pongSeen || Date.now() - this.lastRx <= SOCKET_DEAD_MS)) {
+      ws.send(PING_MESSAGE);
+    } else if (ws?.readyState !== WebSocket.CONNECTING) {
+      this.reconnectNow();
+    }
+  };
+
+  /** Heartbeat plus watchdog: a socket with no traffic is dead even if the browser still says OPEN. */
+  private readonly tick = (): void => {
+    if (this.closed) return;
+    const ws = this.ws;
+    const idle = Date.now() - this.lastRx;
+    if (ws?.readyState === WebSocket.OPEN) {
+      if (this.pongSeen && idle > SOCKET_DEAD_MS) this.reconnectNow();
+      else ws.send(PING_MESSAGE);
+    } else if (ws?.readyState === WebSocket.CONNECTING || this.socketRetryTimer === null) {
+      if (idle > SOCKET_CONNECT_TIMEOUT_MS) this.reconnectNow();
     }
   };
 
@@ -170,7 +221,7 @@ export class CallSession {
     // Always negotiate both an audio and a video m-line, even without a mic
     // or camera: otherwise the offer has no slot for the partner's media and
     // a camera-less/mic-less user would never hear or see them.
-    const stream = this.localStream!;
+    const stream = this.localStream;
     this.audioSender = pc.addTransceiver(this.outgoingAudioTrack() ?? "audio", {
       direction: "sendrecv",
       streams: [stream],
@@ -210,39 +261,25 @@ export class CallSession {
   }
 
   private micTrack(): MediaStreamTrack | null {
-    return this.localStream?.getAudioTracks()[0] ?? null;
+    return this.localStream.getAudioTracks()[0] ?? null;
   }
 
+  private screenAudio(): MediaStreamTrack | null {
+    return this.screenStream?.getAudioTracks().find((t) => t.readyState === "live") ?? null;
+  }
+
+  /** Enhanced mic (+ screen audio) when the audio graph runs, else the raw track. */
   private outgoingAudioTrack(): MediaStreamTrack | null {
-    return this.audioMixer?.track ?? this.micTrack();
+    return this.audio?.track ?? this.micTrack() ?? this.screenAudio();
   }
 
   private emitMedia(): void {
     this.onEvent({ type: "media", audio: !!this.micTrack(), video: !!this.cameraTrack });
   }
 
-  /**
-   * Recomputes the outgoing audio: the mic alone, or mic + shared-screen
-   * audio mixed together while a screen share with audio is active.
-   */
   private async routeAudio(): Promise<void> {
-    this.audioMixer?.close();
-    this.audioMixer = null;
-    const screenAudio = this.screenStream?.getAudioTracks().find((t) => t.readyState === "live");
-    if (screenAudio) {
-      const mic = this.micTrack();
-      try {
-        this.audioMixer = new AudioMixer(mic ? [mic, screenAudio] : [screenAudio]);
-      } catch {
-        this.audioMixer = null;
-      }
-      // Mixer unavailable: share the screen audio as-is rather than nothing.
-      if (!this.audioMixer) {
-        await this.audioSender?.replaceTrack(screenAudio);
-        return;
-      }
-    }
-    await this.audioSender?.replaceTrack(this.outgoingAudioTrack());
+    if (this.closed) return;
+    await this.audioSender?.replaceTrack(this.outgoingAudioTrack()).catch(() => undefined);
   }
 
   /**
@@ -257,7 +294,7 @@ export class CallSession {
       if (!t || t.sender === current) continue;
       t.direction = "sendrecv";
       await t.sender.replaceTrack(kind === "audio" ? this.outgoingAudioTrack() : this.outgoingVideoTrack());
-      if (this.localStream) t.sender.setStreams?.(this.localStream);
+      t.sender.setStreams?.(this.localStream);
       if (kind === "audio") this.audioSender = t.sender;
       else this.videoSender = t.sender;
     }
@@ -281,6 +318,7 @@ export class CallSession {
       this.session?.mark_connected();
       this.onEvent({ type: "connected" });
       this.emitVideoResolution();
+      void prioritizeAudio(this.audioSender);
       this.stopQualityPoll?.();
       this.stopQualityPoll = pollConnectionQuality(
         this.pc!,
@@ -338,12 +376,22 @@ export class CallSession {
     });
   }
 
+  /**
+   * Media not up in time: rejoin the room for a fresh pairing. Never gives
+   * up; the delay doubles up to MAX_RECOVERY_BACKOFF. The answerer waits
+   * twice as long so the offerer normally acts first and the two sides do
+   * not reset each other in a loop.
+   */
   private armRecoveryTimer(): void {
     if (this.recoveryTimer !== null) return;
+    const delay =
+      RECOVERY_TIMEOUT_MS * Math.min(2 ** this.renegotiations, MAX_RECOVERY_BACKOFF) * (this.isOfferer ? 1 : 2);
     this.recoveryTimer = window.setTimeout(() => {
       this.recoveryTimer = null;
-      this.renegotiate();
-    }, RECOVERY_TIMEOUT_MS);
+      if (this.closed) return;
+      this.renegotiations++;
+      this.reconnectNow();
+    }, delay);
   }
 
   private clearRecoveryTimer(): void {
@@ -353,84 +401,84 @@ export class CallSession {
     }
   }
 
-  private renegotiate(): void {
-    if (this.closed) return;
-    if (++this.renegotiations > MAX_RENEGOTIATIONS) {
-      this.fail("ice-failed");
-      return;
-    }
-    this.clearSocketRetry();
-    const old = this.ws;
-    if (old) {
-      old.onopen = old.onmessage = old.onclose = null;
-      old.close(1000, "rejoin");
-    }
+  private reconnectNow(): void {
     this.socketRetries = 0;
     this.connectSocket();
   }
 
-  private fail(reason: string): void {
-    this.session?.mark_failed();
-    this.onEvent({ type: "failed", reason });
-    this.stop();
+  /** Detaches and closes the current socket so its late events cannot act. */
+  private dropSocket(): void {
+    const ws = this.ws;
+    this.ws = null;
+    if (!ws) return;
+    ws.onopen = ws.onmessage = ws.onclose = null;
+    if (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING) ws.close(1000, "rejoin");
   }
 
-  private startHeartbeat(): void {
-    this.heartbeatTimer = window.setInterval(() => this.send(PING_MESSAGE), HEARTBEAT_INTERVAL_MS);
-  }
-
+  /**
+   * Every (re)open starts a fresh pairing: the server sends `peer-left` to
+   * the partner when this socket goes, then `peer-joined` to both, so both
+   * sides rebuild their peer connection and the two always meet again.
+   */
   private connectSocket(): void {
+    if (this.closed) return;
+    this.clearSocketRetry();
+    this.dropSocket();
+    const gen = ++this.socketGen;
     const ws = new WebSocket(`${SIGNAL_WS_URL}/${this.roomId}?sid=${encodeURIComponent(tabSessionId())}`);
     this.ws = ws;
+    this.lastRx = Date.now();
     let opened = false;
 
     ws.onopen = () => {
       opened = true;
       this.socketRetries = 0;
-      this.send(PING_MESSAGE);
-      if (this.hadSocket) {
-        this.enqueue(async () => {
+      this.lastRx = Date.now();
+      ws.send(PING_MESSAGE);
+      const rejoin = this.hadSocket;
+      this.hadSocket = true;
+      this.enqueue(async () => {
+        if (rejoin) {
           this.session?.free();
           this.session = new SignalSession(this.roomId);
           await this.resetPeerConnection();
-          this.onEvent({ type: "waiting" });
-        });
-      }
-      this.hadSocket = true;
+        }
+        this.onEvent({ type: "waiting" });
+      });
     };
 
     ws.onmessage = (event) => {
+      this.lastRx = Date.now();
       const raw = String(event.data);
+      if (raw === PONG_MESSAGE) {
+        this.pongSeen = true;
+        return;
+      }
       this.enqueue(() => this.handleSignal(raw));
     };
 
     ws.onclose = (event) => {
-      if (this.closed || this.ws !== ws) return;
+      if (this.closed || gen !== this.socketGen) return;
+      this.ws = null;
       if (event.code === REPLACED_CLOSE_CODE) {
         this.onEvent({ type: "discarded" });
         this.stop();
         return;
       }
-      void this.retrySocket(opened);
+      void this.retrySocket(gen, opened);
     };
   }
 
-  private async retrySocket(opened: boolean): Promise<void> {
-    if (!opened && (await isRoomFull(this.roomId))) {
-      if (this.closed) return;
-      this.onEvent({ type: "full" });
-      this.stop();
-      return;
-    }
-    if (this.closed) return;
-    if (++this.socketRetries > MAX_SOCKET_RETRIES) {
-      this.fail("signaling-lost");
-      return;
-    }
-    const delay = Math.min(SOCKET_RETRY_MAX_MS, SOCKET_RETRY_BASE_MS * 2 ** (this.socketRetries - 1));
+  /** Retries forever with capped backoff; a full room is polled until a slot frees. */
+  private async retrySocket(gen: number, opened: boolean): Promise<void> {
+    const full = !opened && (await isRoomFull(this.roomId));
+    if (this.closed || gen !== this.socketGen) return;
+    if (full) this.onEvent({ type: "full" });
+    const n = ++this.socketRetries;
+    const delay = full ? FULL_ROOM_POLL_MS : Math.min(SOCKET_RETRY_MAX_MS, SOCKET_RETRY_BASE_MS * 2 ** Math.min(n - 1, 8));
     this.socketRetryTimer = window.setTimeout(() => {
       this.socketRetryTimer = null;
-      this.connectSocket();
+      if (gen === this.socketGen) this.connectSocket();
     }, delay);
   }
 
@@ -529,7 +577,7 @@ export class CallSession {
 
   setMicEnabled(enabled: boolean): void {
     this.micEnabled = enabled;
-    for (const track of this.localStream?.getAudioTracks() ?? []) {
+    for (const track of this.localStream.getAudioTracks()) {
       track.enabled = enabled;
     }
   }
@@ -547,10 +595,10 @@ export class CallSession {
     if (!track) return;
     track.onended = null;
     this.cameraTrack = null;
-    this.localStream?.removeTrack(track);
+    this.localStream.removeTrack(track);
     track.stop();
     if (!this.screenStream) await this.videoSender?.replaceTrack(null);
-    if (this.localStream) this.onEvent({ type: "local-stream", stream: this.localStream });
+    this.onEvent({ type: "local-stream", stream: this.localStream });
     this.emitMedia();
   }
 
@@ -562,13 +610,13 @@ export class CallSession {
     const old = this.cameraTrack;
     if (old) {
       old.onended = null;
-      this.localStream?.removeTrack(old);
+      this.localStream.removeTrack(old);
       old.stop();
     }
     this.setCameraTrack(track);
-    this.localStream?.addTrack(track);
+    this.localStream.addTrack(track);
     if (!this.screenStream) await this.videoSender?.replaceTrack(track);
-    if (this.localStream) this.onEvent({ type: "local-stream", stream: this.localStream });
+    this.onEvent({ type: "local-stream", stream: this.localStream });
     this.emitMedia();
     this.emitVideoResolution();
   }
@@ -599,8 +647,9 @@ export class CallSession {
       this.videoDeviceId = constraints.videoDeviceId;
       if (this.cameraTrack && !this.cameraBusy) await this.useCameraTrack(await getCameraTrack(this.videoDeviceId));
     }
-    if (constraints.audioDeviceId && this.localStream && !this.closed) {
-      const [track] = (await getMicStream(constraints.audioDeviceId)).getAudioTracks();
+    if (constraints.audioDeviceId && !this.closed) {
+      const [track] = (await getMicStream(constraints.audioDeviceId, !!this.audio?.enhanced)).getAudioTracks();
+      if (!track) return;
       if (this.closed) {
         track.stop();
         return;
@@ -611,6 +660,7 @@ export class CallSession {
         old.stop();
       }
       this.localStream.addTrack(track);
+      this.audio?.setMic(track);
       await this.routeAudio();
       this.emitMedia();
     }
@@ -627,7 +677,8 @@ export class CallSession {
 
     const [screenTrack] = screenStream.getVideoTracks();
     await this.videoSender?.replaceTrack(screenTrack);
-    if (screenStream.getAudioTracks().length) await this.routeAudio();
+    this.audio?.setScreen(this.screenAudio());
+    await this.routeAudio();
 
     screenTrack.onended = () => void this.stopScreenShare();
     this.onEvent({ type: "screen-share-started" });
@@ -636,14 +687,14 @@ export class CallSession {
 
   async stopScreenShare(): Promise<void> {
     if (!this.screenStream) return;
-    const hadAudio = this.screenStream.getAudioTracks().length > 0;
     for (const track of this.screenStream.getTracks()) {
       track.stop();
     }
     this.screenStream = null;
+    this.audio?.setScreen(null);
 
     await this.videoSender?.replaceTrack(this.cameraTrack);
-    if (hadAudio) await this.routeAudio();
+    await this.routeAudio();
     this.onEvent({ type: "screen-share-stopped" });
     this.emitVideoResolution();
   }
@@ -665,15 +716,15 @@ export class CallSession {
       window.clearInterval(this.heartbeatTimer);
       this.heartbeatTimer = null;
     }
-    this.ws?.close();
+    this.dropSocket();
     this.pc?.close();
-    for (const track of this.localStream?.getTracks() ?? []) {
+    for (const track of this.localStream.getTracks()) {
       track.stop();
     }
     for (const track of this.screenStream?.getTracks() ?? []) {
       track.stop();
     }
-    this.audioMixer?.close();
-    this.audioMixer = null;
+    this.audio?.close();
+    this.audio = null;
   }
 }

@@ -4,5 +4,6 @@ dist/
 .env
 .DS_Store
 frontend/src/wasm/
+frontend/src/enhancer/
 target/
 Cargo.lock
