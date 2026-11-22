@@ -166,42 +166,59 @@ export function setLocalVideoStream(stream: MediaStream): void {
   watchStream("local", stream);
 }
 
+const UNLOCK_EVENTS = ["pointerdown", "pointerup", "keydown", "touchend"] as const;
+
+/** Points a media element at exactly `tracks`; false when it already plays them. */
+function attachTracks(el: HTMLMediaElement, tracks: MediaStreamTrack[]): boolean {
+  const cur = el.srcObject;
+  if (cur instanceof MediaStream && cur.getTracks().length === tracks.length && tracks.every((t) => cur.getTrackById(t.id))) {
+    return false;
+  }
+  el.srcObject = tracks.length ? new MediaStream(tracks) : null;
+  return true;
+}
+
+const unlockRemoteAudio = (): void => {
+  for (const e of UNLOCK_EVENTS) removeEventListener(e, unlockRemoteAudio, true);
+  playRemoteAudio();
+};
+
 /**
- * Browsers block autoplay-with-sound on pages that have no user gesture and
- * no active camera/mic capture — exactly the case for someone who opened a
- * link and declined both permissions. Rejected play() would leave the remote
- * video frozen *and* silent, so fall back to muted playback and unmute on the
- * first interaction.
+ * Browsers block autoplay-with-sound on a page with no user gesture yet (for
+ * example someone who opened a shared link). On a block, show the hint and
+ * retry on the first interaction.
  */
-function playRemote(video: HTMLVideoElement): void {
+function playRemoteAudio(): void {
+  const el = $<HTMLAudioElement>("remote-audio");
   const hint = $<HTMLButtonElement>("btn-unmute-remote");
-  video.muted = false;
-  video.play().then(
-    () => (hint.hidden = true),
+  const src = el.srcObject;
+  if (!src) return;
+  el.play().then(
     () => {
-      video.muted = true;
-      void video.play().catch(() => undefined);
+      if (el.srcObject === src) hint.hidden = true;
+    },
+    (err: unknown) => {
+      if (el.srcObject !== src || !(err instanceof DOMException) || err.name !== "NotAllowedError") return;
       hint.hidden = false;
-      const unmute = () => {
-        removeEventListener("pointerdown", unmute, true);
-        removeEventListener("keydown", unmute, true);
-        video.muted = false;
-        hint.hidden = true;
-        void video.play().catch(() => undefined);
-      };
-      addEventListener("pointerdown", unmute, true);
-      addEventListener("keydown", unmute, true);
+      for (const e of UNLOCK_EVENTS) addEventListener(e, unlockRemoteAudio, true);
     },
   );
 }
 
+/**
+ * Remote audio plays from its own <audio> element. A <video> element whose
+ * stream holds a video track with no frames yet (partner camera off) never
+ * leaves HAVE_NOTHING in Chrome/Safari, so audio in the same element stays
+ * silent until the first video frame. The video element stays muted.
+ */
 export function setRemoteVideoStream(stream: MediaStream): void {
   const video = $<HTMLVideoElement>("remote-video");
-  if (video.srcObject !== stream) {
-    video.srcObject = stream;
+  video.muted = true;
+  if (attachTracks(video, stream.getVideoTracks())) {
     frames.count = -1;
-    playRemote(video);
+    void video.play().catch(() => undefined);
   }
+  if (attachTracks($<HTMLAudioElement>("remote-audio"), stream.getAudioTracks())) playRemoteAudio();
   watchStream("remote", stream);
 }
 
