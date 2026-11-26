@@ -1,4 +1,4 @@
-type View = "landing" | "waiting" | "call" | "ended" | "full";
+type View = "landing" | "call" | "ended" | "full";
 type Side = "local" | "remote";
 type QualityState = "reconnecting" | "fair" | "poor" | "good";
 
@@ -8,12 +8,14 @@ const SPEAK_LEVEL = 0.02;
 const SPEAK_HOLD_MS = 350;
 const FRAME_STALE_MS = 2000;
 const COPY_RESET_MS = 1600;
+const PERM_ASK = "Meet needs your microphone to talk. Your camera stays off until you turn it on.";
+const PERM_HINT =
+  "Access is blocked. Allow camera and microphone in your browser's site settings (the icon next to the address bar), then try again.";
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 
 const views: Record<View, HTMLElement> = {
   landing: $("view-landing"),
-  waiting: $("view-waiting"),
   call: $("view-call"),
   ended: $("view-ended"),
   full: $("view-full"),
@@ -21,8 +23,98 @@ const views: Record<View, HTMLElement> = {
 
 export function showView(view: View): void {
   for (const [name, el] of Object.entries(views)) el.hidden = name !== view;
-  const dark = view === "waiting" || view === "call";
-  document.querySelector('meta[name="theme-color"]')?.setAttribute("content", dark ? THEME.dark : THEME.light);
+  document.querySelector('meta[name="theme-color"]')?.setAttribute("content", view === "call" ? THEME.dark : THEME.light);
+  renderPermission();
+}
+
+const perm = { blocked: false, denied: false, tries: 0, open: false };
+let micAvailable = false;
+
+function renderPermission(): void {
+  const dlg = $<HTMLDialogElement>("perm-dialog");
+  const hint = perm.denied || perm.tries > 0;
+  $("perm-msg").textContent = hint ? PERM_HINT : PERM_ASK;
+  $("btn-perm-allow").textContent = hint ? "Try again" : "Allow access";
+  const show = perm.blocked && perm.open && !views.call.hidden;
+  if (show && !dlg.open) {
+    dlg.showModal();
+    $("btn-perm-allow").focus();
+  } else if (!show && dlg.open) dlg.close();
+}
+
+function syncMic(): void {
+  const btn = $<HTMLButtonElement>("btn-toggle-mic");
+  const muted = btn.getAttribute("aria-pressed") === "true";
+  btn.disabled = !micAvailable && !perm.blocked;
+  btn.setAttribute(
+    "aria-label",
+    micAvailable ? (muted ? "Unmute microphone" : "Mute microphone") : perm.blocked ? "Allow microphone access" : "No microphone available",
+  );
+  eachTile("local", (el) => el.toggleAttribute("data-muted", !micAvailable || muted));
+}
+
+/** Camera or mic access was refused: open the centered dialog once per new block. */
+export function setPermission(blocked: boolean, denied: boolean): void {
+  if (blocked && !perm.blocked) perm.open = true;
+  if (!blocked) perm.tries = 0;
+  perm.blocked = blocked;
+  perm.denied = denied;
+  renderPermission();
+  syncMic();
+}
+
+function openPermission(): boolean {
+  if (perm.blocked) {
+    perm.open = true;
+    renderPermission();
+  }
+  return perm.blocked;
+}
+
+export function bindPermissionDialog(onAllow: () => Promise<void>): void {
+  const dlg = $<HTMLDialogElement>("perm-dialog");
+  const allow = $<HTMLButtonElement>("btn-perm-allow");
+  allow.addEventListener("click", async () => {
+    allow.disabled = true;
+    perm.tries++;
+    await onAllow().catch(() => undefined);
+    allow.disabled = false;
+    renderPermission();
+  });
+  $("btn-perm-skip").addEventListener("click", () => dlg.close());
+  dlg.addEventListener("close", () => {
+    perm.open = false;
+  });
+}
+
+/** Alone in the room: show the share link in place of the partner tile. */
+export function setAlone(alone: boolean): void {
+  $("waiting-panel").hidden = !alone;
+  $("remote-tile").hidden = alone;
+  $("call-timer").hidden = alone;
+}
+
+type Os = "mac" | "windows";
+const APPS: Record<Os, { file: string; name: string }> = {
+  mac: { file: "Meet.dmg", name: "Mac" },
+  windows: { file: "Meet.exe", name: "Windows" },
+};
+
+function desktopOs(): Os | null {
+  const nav = navigator as Navigator & { userAgentData?: { platform?: string } };
+  const p = nav.userAgentData?.platform || nav.userAgent;
+  if (/windows/i.test(p)) return "windows";
+  return /mac/i.test(p) && nav.maxTouchPoints < 2 ? "mac" : null;
+}
+
+/** Shows the desktop app download for the visitor's OS (Mac or Windows only). */
+export function bindInstallLink(base: string): void {
+  const os = desktopOs();
+  if (!os) return;
+  const link = $<HTMLAnchorElement>("btn-install");
+  link.href = `${base}/${APPS[os].file}`;
+  $("install-label").textContent = `Install for ${APPS[os].name}`;
+  link.hidden = false;
 }
 
 export function setLandingError(message: string | null): void {
@@ -31,7 +123,8 @@ export function setLandingError(message: string | null): void {
   el.textContent = message ?? "";
   el.hidden = !message;
   input.setAttribute("aria-invalid", String(!!message));
-  input.setAttribute("aria-describedby", message ? "landing-error landing-hint" : "landing-hint");
+  if (message) input.setAttribute("aria-describedby", "landing-error");
+  else input.removeAttribute("aria-describedby");
 }
 
 export function setRoomLink(roomId: string): void {
@@ -40,10 +133,9 @@ export function setRoomLink(roomId: string): void {
 
 export function setCallRoomCode(roomId: string): void {
   $("call-room-code").textContent = roomId;
-  $("call-room-code-waiting").textContent = roomId;
 }
 
-const tileIds: Record<Side, string[]> = { local: ["preview-tile", "local-tile"], remote: ["remote-tile"] };
+const tileIds: Record<Side, string[]> = { local: ["local-tile"], remote: ["remote-tile"] };
 const streams: Record<Side, MediaStream | null> = { local: null, remote: null };
 const watched = new WeakSet<MediaStreamTrack>();
 const frames = { count: -1, at: 0 };
@@ -156,11 +248,6 @@ function startMeters(): void {
   meterTimer ??= window.setInterval(meterTick, METER_MS);
 }
 
-export function setLocalPreview(stream: MediaStream): void {
-  $<HTMLVideoElement>("local-preview").srcObject = stream;
-  watchStream("local", stream);
-}
-
 export function setLocalVideoStream(stream: MediaStream): void {
   $<HTMLVideoElement>("local-video").srcObject = stream;
   watchStream("local", stream);
@@ -222,13 +309,6 @@ export function setRemoteVideoStream(stream: MediaStream): void {
   watchStream("remote", stream);
 }
 
-const MEDIA_NOTE = {
-  both: "The call begins when they open it. Your camera and microphone are on.",
-  audio: "The call begins when they open it. It starts as an audio call; you can turn your camera on once it begins.",
-  video: "The call begins when they open it. Your camera is on; microphone is off.",
-  none: "The call begins when they open it. Camera and mic are off — you can still listen, watch, and share your screen.",
-};
-
 export function bindCameraToggle(onToggle: (enable: boolean) => Promise<boolean>): void {
   const btn = $<HTMLButtonElement>("btn-toggle-camera");
   if (typeof navigator.mediaDevices?.getUserMedia !== "function") {
@@ -240,7 +320,7 @@ export function bindCameraToggle(onToggle: (enable: boolean) => Promise<boolean>
     btn.disabled = true;
     const on = await onToggle(enable).catch(() => false);
     btn.disabled = false;
-    if (enable && !on) btn.title = "Camera unavailable — check browser permissions";
+    if (enable && !on && !openPermission()) btn.title = "Camera unavailable — check browser permissions";
   });
 }
 
@@ -252,14 +332,8 @@ export function setLocalMediaState(audio: boolean, video: boolean): void {
   if (video) cam.removeAttribute("title");
   $("icon-camera-on").classList.toggle("hidden", !video);
   $("icon-camera-off").classList.toggle("hidden", video);
-
-  const btn = $<HTMLButtonElement>("btn-toggle-mic");
-  const muted = btn.getAttribute("aria-pressed") === "true";
-  btn.disabled = !audio;
-  btn.setAttribute("aria-label", !audio ? "No microphone available" : muted ? "Unmute microphone" : "Mute microphone");
-  eachTile("local", (el) => el.toggleAttribute("data-muted", !audio || muted));
-  $("preview-empty-label").textContent = "Camera off";
-  $("waiting-media-note").textContent = MEDIA_NOTE[audio && video ? "both" : audio ? "audio" : video ? "video" : "none"];
+  micAvailable = audio;
+  syncMic();
 }
 
 export function setEndedMessage(title: string, message: string): void {
@@ -297,6 +371,10 @@ export function bindMicToggle(onToggle: (enabled: boolean) => void): void {
   const offIcon = $("icon-mic-off");
   let enabled = true;
   btn.addEventListener("click", () => {
+    if (!micAvailable) {
+      openPermission();
+      return;
+    }
     enabled = !enabled;
     btn.setAttribute("aria-pressed", String(!enabled));
     btn.setAttribute("aria-label", enabled ? "Mute microphone" : "Unmute microphone");

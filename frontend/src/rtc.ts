@@ -107,31 +107,90 @@ export async function getMicStream(audioDeviceId?: string, enhanced = false): Pr
   return navigator.mediaDevices.getUserMedia({ audio: audioConstraints(audioDeviceId, enhanced) });
 }
 
-async function tryGetUserMedia(constraints: MediaStreamConstraints): Promise<MediaStream | null> {
+const BLOCKED = new Set(["NotAllowedError", "SecurityError"]);
+const PERMS = ["microphone", "camera"] as const;
+
+type Perm = (typeof PERMS)[number];
+type Grab = { stream: MediaStream | null; blocked: boolean };
+
+export const isBlocked = (e: unknown): boolean => e instanceof DOMException && BLOCKED.has(e.name);
+
+async function grab(constraints: MediaStreamConstraints): Promise<Grab> {
   try {
-    return await navigator.mediaDevices.getUserMedia(constraints);
+    return { stream: await navigator.mediaDevices.getUserMedia(constraints), blocked: false };
+  } catch (e) {
+    return { stream: null, blocked: isBlocked(e) };
+  }
+}
+
+async function permState(name: Perm): Promise<PermissionState | null> {
+  try {
+    return (await navigator.permissions.query({ name: name as PermissionName })).state;
   } catch {
     return null;
   }
 }
 
+/** True when the browser refuses camera or mic without a prompt (only site settings lift it). */
+export async function permissionDenied(): Promise<boolean> {
+  return (await Promise.all(PERMS.map(permState))).includes("denied");
+}
+
+/** Calls `onChange` when the camera or mic permission changes; returns the unsubscribe. */
+export function watchPermissions(onChange: () => void): () => void {
+  let off = false;
+  const subs: PermissionStatus[] = [];
+  for (const name of PERMS) {
+    navigator.permissions
+      ?.query({ name: name as PermissionName })
+      .then((s) => {
+        if (off) return;
+        s.onchange = onChange;
+        subs.push(s);
+      })
+      .catch(() => undefined);
+  }
+  return () => {
+    off = true;
+    for (const s of subs) s.onchange = null;
+  };
+}
+
+export interface InitialMedia {
+  stream: MediaStream;
+  /** Camera or mic permission was refused or dismissed. */
+  blocked: boolean;
+  /** The browser now refuses without a prompt. */
+  denied: boolean;
+}
+
 /**
  * Asks for camera and mic permission up front, then stops the camera so the
  * call starts audio-only. The camera button can turn it on later without a
- * new prompt. Never rejects: denied or missing devices give fewer tracks.
+ * new prompt. Never rejects: refused or missing devices give fewer tracks.
  */
-export async function getInitialMedia(enhanced = false): Promise<MediaStream> {
-  if (!navigator.mediaDevices?.getUserMedia) return new MediaStream();
+export async function getInitialMedia(enhanced = false): Promise<InitialMedia> {
+  if (!navigator.mediaDevices?.getUserMedia) return { stream: new MediaStream(), blocked: false, denied: false };
   const audio = audioConstraints(undefined, enhanced);
-  const both = await tryGetUserMedia({ audio, video: videoConstraints() });
-  const parts = both
-    ? [both]
-    : (await Promise.all([
-        tryGetUserMedia({ audio }),
-        tryGetUserMedia({ video: videoConstraints() }),
-      ])).filter((s): s is MediaStream => s !== null);
-  for (const t of parts.flatMap((s) => s.getVideoTracks())) t.stop();
-  return new MediaStream(parts.flatMap((s) => s.getAudioTracks()));
+  const video = videoConstraints();
+  const both = await grab({ audio, video });
+  let parts = [both];
+  if (!both.stream) {
+    // After a refusal, ask alone only for a kind that is granted, or that the
+    // combined request never prompted for: no second prompt.
+    const [mic, cam] = both.blocked ? await Promise.all(PERMS.map(permState)) : (["granted", "granted"] as const);
+    const ask = (self: PermissionState | null, other: PermissionState | null, c: MediaStreamConstraints): Promise<Grab> =>
+      self === "granted" || (self === "prompt" && other === "denied") ? grab(c) : Promise.resolve({ stream: null, blocked: true });
+    parts = await Promise.all([ask(mic, cam, { audio }), ask(cam, mic, { video })]);
+  }
+  const streams = parts.flatMap((p) => (p.stream ? [p.stream] : []));
+  for (const t of streams.flatMap((s) => s.getVideoTracks())) t.stop();
+  const blocked = parts.some((p) => p.blocked);
+  return {
+    stream: new MediaStream(streams.flatMap((s) => s.getAudioTracks())),
+    blocked,
+    denied: blocked && (await permissionDenied()),
+  };
 }
 
 export async function getCameraTrack(videoDeviceId?: string): Promise<MediaStreamTrack> {

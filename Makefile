@@ -13,6 +13,9 @@ build:
 	cp -r frontend/dist docs
 	touch docs/.nojekyll
 
+run-mac:
+	$(MAKE) -C desktop run-mac
+
 deploy: build
 	cd worker && npx wrangler deploy
 	git checkout main

@@ -283,17 +283,37 @@ impl Enhancer {
             self.output[i] = if self.fout.len() > 0 { self.fout.pop() } else { 0.0 };
         }
     }
+
+    /// Heap-allocated enhancer for native callers.
+    pub fn boxed(sample_rate: f32) -> Box<Self> {
+        Box::new(Self::new(rate(sample_rate)))
+    }
+
+    /// Processes `buf` in place.
+    pub fn run(&mut self, buf: &mut [f32]) {
+        for chunk in buf.chunks_mut(MAX_BLOCK) {
+            let n = chunk.len();
+            self.input[..n].copy_from_slice(chunk);
+            self.process(n);
+            chunk.copy_from_slice(&self.output[..n]);
+        }
+    }
+}
+
+fn rate(sample_rate: f32) -> f32 {
+    if sample_rate.is_finite() && sample_rate >= 8_000.0 { sample_rate } else { RNN_RATE }
 }
 
 /// Returns an owned handle; release it with `destroy`.
+#[cfg(target_arch = "wasm32")]
 #[no_mangle]
 pub extern "C" fn create(sample_rate: f32) -> *mut Enhancer {
-    let sr = if sample_rate.is_finite() && sample_rate >= 8_000.0 { sample_rate } else { RNN_RATE };
-    Box::into_raw(Box::new(Enhancer::new(sr)))
+    Box::into_raw(Enhancer::boxed(sample_rate))
 }
 
 /// # Safety
 /// `e` must come from `create` and not be destroyed.
+#[cfg(target_arch = "wasm32")]
 #[no_mangle]
 pub unsafe extern "C" fn input_ptr(e: *mut Enhancer) -> *mut f32 {
     e.as_mut().map_or(std::ptr::null_mut(), |e| e.input.as_mut_ptr())
@@ -301,12 +321,14 @@ pub unsafe extern "C" fn input_ptr(e: *mut Enhancer) -> *mut f32 {
 
 /// # Safety
 /// `e` must come from `create` and not be destroyed.
+#[cfg(target_arch = "wasm32")]
 #[no_mangle]
 pub unsafe extern "C" fn output_ptr(e: *mut Enhancer) -> *const f32 {
     e.as_ref().map_or(std::ptr::null(), |e| e.output.as_ptr())
 }
 
 /// Number of samples one call can take.
+#[cfg(target_arch = "wasm32")]
 #[no_mangle]
 pub extern "C" fn max_block() -> usize {
     MAX_BLOCK
@@ -314,6 +336,7 @@ pub extern "C" fn max_block() -> usize {
 
 /// # Safety
 /// `e` must come from `create` and not be destroyed.
+#[cfg(target_arch = "wasm32")]
 #[no_mangle]
 pub unsafe extern "C" fn process(e: *mut Enhancer, n: usize) {
     if let Some(e) = e.as_mut() {
@@ -323,6 +346,7 @@ pub unsafe extern "C" fn process(e: *mut Enhancer, n: usize) {
 
 /// # Safety
 /// `e` must come from `create`; it is invalid afterwards.
+#[cfg(target_arch = "wasm32")]
 #[no_mangle]
 pub unsafe extern "C" fn destroy(e: *mut Enhancer) {
     if !e.is_null() {

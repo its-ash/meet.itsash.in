@@ -3,6 +3,7 @@ export const SIGNAL_WS_URL = `wss://${SIGNAL_HOST}/ws`;
 export const SIGNAL_NEW_ROOM_URL = `https://${SIGNAL_HOST}/new-room`;
 export const SIGNAL_ROOM_STATUS_URL = `https://${SIGNAL_HOST}/room-status`;
 export const SIGNAL_TURN_CREDENTIALS_URL = `https://${SIGNAL_HOST}/turn-credentials`;
+export const DOWNLOAD_URL = "https://github.com/its-ash/meet.itsash.in/releases/latest/download";
 
 export const FALLBACK_ICE_SERVERS: RTCIceServer[] = [
   { urls: "stun:stun.cloudflare.com:3478" },

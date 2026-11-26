@@ -17,129 +17,21 @@
 </head>
 <body class="font-sans antialiased h-full">
 
-<main id="view-landing" class="surface-light min-h-dvh w-full overflow-x-hidden flex flex-col">
-  <div class="w-full max-w-6xl mx-auto px-5 md:px-10 flex-1 flex flex-col">
-    <header class="flex items-center justify-between h-16 md:h-20">
-      <a href="/" class="inline-flex items-center gap-2 text-lg font-semibold tracking-tight rounded-md" aria-label="Meet home"><span class="dot bg-ink"></span>meet</a>
-      <div class="flex items-center gap-4">
-        <p class="hidden sm:flex items-center gap-2 text-xs text-muted"><span class="dot bg-live"></span>Peer to peer · No account · No download</p>
-        <button id="btn-install" type="button" class="btn min-h-11 px-4 gap-2 rounded-xl border border-ink text-sm hover:bg-ink hover:text-paper" aria-describedby="install-hint" hidden>
-          <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v11M7 10l5 5 5-5M5 20h14"/></svg>
-          <span>Install app</span>
-        </button>
-      </div>
-    </header>
-    <p id="install-hint" class="self-end -mt-1 mb-2 max-w-[34ch] text-right text-xs text-muted" role="status" hidden>On iPhone or iPad: tap Share, then “Add to Home Screen”.</p>
-
-    <section class="flex-1 grid lg:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)] gap-12 lg:gap-16 items-center py-8 md:py-16" aria-labelledby="landing-title">
-      <div class="min-w-0">
-        <p class="rise text-xs md:text-sm text-muted mb-5" style="--i:0">Two people. One code.</p>
-        <h1 id="landing-title" class="rise text-[2.5rem] sm:text-6xl lg:text-[4.25rem] font-semibold tracking-[-0.04em] leading-[1.02]" style="--i:1">Talk now.<br /><span class="text-muted">Nothing to install.</span></h1>
-        <p class="rise mt-6 text-base md:text-lg text-ink-soft leading-relaxed max-w-[44ch]" style="--i:2">Private video calls for two, straight from your browser.</p>
-
-        <div class="rise mt-10 flex flex-col sm:flex-row gap-3 max-w-xl" style="--i:3">
-          <button id="btn-create-room" type="button" class="btn btn-primary text-base sm:flex-1">
-            <span>New meeting</span>
-            <svg class="arrow w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
-          </button>
-
-          <form id="form-join-room" class="code-field sm:flex-1" novalidate>
-            <label for="input-room-id" class="sr-only">4-character meeting code</label>
-            <input id="input-room-id" name="roomId" type="text" inputmode="text" maxlength="4" autocomplete="off" autocapitalize="characters" spellcheck="false" enterkeyhint="go"
-              placeholder="Enter code" aria-describedby="landing-hint"
-              class="flex-1 min-w-0 bg-transparent text-ink placeholder:text-muted text-base px-5 uppercase tracking-[0.3em] placeholder:normal-case placeholder:tracking-normal" />
-            <button type="submit" aria-label="Join meeting" class="shrink-0 px-5 text-sm font-medium border-l-[1.5px] border-ink hover:bg-ink hover:text-paper">Join</button>
-          </form>
-        </div>
-
-        <p id="landing-error" class="mt-3 text-sm text-danger" role="alert" hidden></p>
-        <p id="landing-hint" class="rise mt-4 text-sm text-muted max-w-[52ch]" style="--i:4">Start a meeting and share the link, or type the 4-character code you got.</p>
-      </div>
-
-      <div class="rise hidden lg:block" style="--i:5" aria-hidden="true">
-        <div class="surface-dark rounded-[1.75rem] p-4 shadow-[0_40px_80px_-40px_rgb(18_18_18/0.6)]">
-          <div class="flex items-center justify-between px-1 pb-4">
-            <span class="chip"><span class="dot bg-accent"></span>7K3Q</span>
-            <span class="text-xs text-fog tabular-nums">04:12</span>
-          </div>
-          <div class="grid grid-cols-2 gap-3">
-            <div class="tile aspect-[4/5]" data-video="off" data-speaking>
-              <div class="tile-empty" style="--avatar:5rem">
-                <span class="avatar"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><circle cx="12" cy="8" r="4"/><path d="M4.5 20.5c.6-3.8 3.8-6.5 7.5-6.5s6.9 2.7 7.5 6.5"/></svg></span>
-                <span class="wave flex items-center gap-1 h-5"><span style="--i:0"></span><span style="--i:1"></span><span style="--i:2"></span><span style="--i:3"></span><span style="--i:4"></span></span>
-              </div>
-              <span class="tile-tag">Partner</span>
-            </div>
-            <div class="tile aspect-[4/5]" data-video="off">
-              <div class="tile-empty" style="--avatar:5rem">
-                <span class="avatar"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><circle cx="12" cy="8" r="4"/><path d="M4.5 20.5c.6-3.8 3.8-6.5 7.5-6.5s6.9 2.7 7.5 6.5"/></svg></span>
-                <span class="text-xs text-fog h-5 flex items-center">Camera off</span>
-              </div>
-              <span class="tile-tag">You</span>
-            </div>
-          </div>
-          <div class="flex items-center justify-center gap-2.5 pt-4">
-            <span class="w-10 h-10 rounded-full bg-stage-3 border border-stage-line"></span>
-            <span class="w-10 h-10 rounded-full bg-stage-3 border border-stage-line"></span>
-            <span class="w-10 h-10 rounded-full bg-stage-3 border border-stage-line"></span>
-            <span class="w-10 h-10 rounded-full bg-stage-3 border border-stage-line"></span>
-            <span class="w-12 h-10 rounded-full bg-danger"></span>
-          </div>
-        </div>
-      </div>
-    </section>
-
-    <ul class="grid sm:grid-cols-3 gap-6 sm:gap-8 border-t border-line py-8 md:py-10">
-      <li class="rise" style="--i:6">
-        <h2 class="text-sm font-semibold mb-1.5">Private by design</h2>
-        <p class="text-sm text-muted leading-relaxed max-w-[34ch]">Audio and video go directly between you two. They never touch our server.</p>
-      </li>
-      <li class="rise" style="--i:7">
-        <h2 class="text-sm font-semibold mb-1.5">Your choice</h2>
-        <p class="text-sm text-muted leading-relaxed max-w-[34ch]">Calls start as audio. Turn your camera on any time, or share your screen with audio.</p>
-      </li>
-      <li class="rise" style="--i:8">
-        <h2 class="text-sm font-semibold mb-1.5">Just a code</h2>
-        <p class="text-sm text-muted leading-relaxed max-w-[34ch]">No sign-up and no app. Share a link like meet.itsash.in/7k3q.</p>
-      </li>
-    </ul>
-
-    <footer class="flex flex-col sm:flex-row gap-1 justify-between border-t border-line py-6 text-xs text-muted">
-      <span>meet · p2p calls for two</span>
-      <span>Built on WebRTC</span>
-    </footer>
-  </div>
-</main>
-
-<main id="view-waiting" class="surface-dark min-h-dvh w-full flex flex-col" hidden>
-  <header class="flex items-center justify-between gap-4 px-4 md:px-8 h-16 shrink-0 pt-[env(safe-area-inset-top)]">
-    <a href="/" class="inline-flex items-center gap-2 font-semibold tracking-tight rounded-md" aria-label="Meet home"><span class="dot bg-accent"></span>meet</a>
-    <span class="chip"><span class="text-fog">Room</span><span id="call-room-code-waiting" class="uppercase tracking-[0.2em]"></span></span>
-  </header>
-
-  <div class="flex-1 w-full max-w-6xl mx-auto grid lg:grid-cols-[minmax(0,1.25fr)_minmax(0,1fr)] gap-6 lg:gap-12 items-center px-4 md:px-8 pt-2 pb-[max(1.5rem,env(safe-area-inset-bottom))]">
-    <div class="min-w-0 lg:order-2">
-      <p class="flex items-center gap-2 text-xs text-accent mb-4" role="status"><span class="dot bg-accent pulse-dot"></span>Waiting for your partner</p>
-      <h1 class="text-2xl md:text-4xl font-semibold tracking-[-0.03em] leading-tight">Share this link<br class="hidden md:block" /> to start the call.</h1>
-      <p id="waiting-media-note" class="text-sm text-fog mt-3 leading-relaxed max-w-[44ch]">The call begins when they open it.</p>
-
-      <div class="mt-6 flex items-stretch rounded-2xl border border-stage-line bg-stage-2 p-1.5 gap-1.5">
-        <code id="room-link" class="flex-1 min-w-0 self-center px-3 text-sm truncate select-all"></code>
-        <button id="btn-copy-link" type="button" class="btn min-h-11 px-4 rounded-xl bg-accent text-ink text-sm font-semibold hover:bg-[#d6f78c]">
-          <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
-          <span id="copy-label" aria-live="polite">Copy</span><span class="sr-only"> link</span>
-        </button>
-      </div>
-    </div>
-
-    <div id="preview-tile" class="tile w-full aspect-[4/3] max-h-[60dvh] lg:aspect-video lg:order-1" data-video="off">
-      <video id="local-preview" class="-scale-x-100" autoplay muted playsinline></video>
-      <div class="tile-empty" style="--avatar:clamp(4.5rem,18vw,7rem)">
-        <span class="avatar"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4.5 20.5c.6-3.8 3.8-6.5 7.5-6.5s6.9 2.7 7.5 6.5"/></svg></span>
-        <span id="preview-empty-label" class="text-xs text-fog">Camera off</span>
-      </div>
-      <span class="tile-tag">You</span>
-    </div>
+<main id="view-landing" class="surface-light min-h-dvh w-full grid place-items-center px-5">
+  <div class="w-full max-w-sm flex flex-col gap-3">
+    <form id="form-join-room" class="code-field" novalidate>
+      <label for="input-room-id" class="sr-only">4-character meeting code</label>
+      <input id="input-room-id" name="roomId" type="text" inputmode="text" maxlength="4" autocomplete="off" autocapitalize="characters" spellcheck="false" enterkeyhint="go"
+        placeholder="Enter code"
+        class="flex-1 min-w-0 bg-transparent text-ink placeholder:text-muted text-base px-5 uppercase tracking-[0.3em] placeholder:normal-case placeholder:tracking-normal" />
+      <button type="submit" aria-label="Join meeting" class="shrink-0 px-6 text-sm font-medium border-l-[1.5px] border-ink hover:bg-ink hover:text-paper">Join</button>
+    </form>
+    <button id="btn-create-room" type="button" class="btn btn-primary text-base">New meeting</button>
+    <p id="landing-error" class="text-sm text-danger text-center" role="alert" hidden></p>
+    <a id="btn-install" class="btn btn-quiet text-sm" rel="noopener" hidden>
+      <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12M7 10l5 5 5-5M4 20h16"/></svg>
+      <span id="install-label">Install app</span>
+    </a>
   </div>
 </main>
 
@@ -182,6 +74,19 @@
 </main>
 
 <main id="view-call" class="surface-dark relative h-dvh w-full overflow-hidden bg-black" hidden>
+  <div id="waiting-panel" class="absolute inset-0 grid place-items-center px-4 pb-32 pt-20" hidden>
+    <div class="w-full max-w-md flex flex-col items-center gap-4">
+      <p class="flex items-center gap-2 text-sm text-accent" role="status"><span class="dot bg-accent pulse-dot"></span>Waiting for your partner</p>
+      <div class="w-full flex items-stretch rounded-2xl border border-stage-line bg-stage-2 p-1.5 gap-1.5">
+        <code id="room-link" class="flex-1 min-w-0 self-center px-3 text-sm truncate select-all"></code>
+        <button id="btn-copy-link" type="button" class="btn min-h-11 px-4 rounded-xl bg-accent text-ink text-sm font-semibold hover:bg-[#d6f78c]">
+          <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+          <span id="copy-label" aria-live="polite">Copy</span><span class="sr-only"> link</span>
+        </button>
+      </div>
+    </div>
+  </div>
+
   <div id="remote-tile" class="tile tile-full absolute inset-0" data-video="off">
     <video id="remote-video" autoplay muted playsinline></video>
     <audio id="remote-audio" autoplay hidden></audio>
@@ -203,7 +108,7 @@
         <span id="quality-dot" class="dot bg-warn" aria-hidden="true"></span>
         <span id="quality-label" class="tabular-nums">Measuring…</span>
       </div>
-      <span class="chip"><span class="dot bg-accent pulse-dot" aria-hidden="true"></span><span id="call-duration" class="tabular-nums" role="timer" aria-label="Call duration">00:00</span></span>
+      <span id="call-timer" class="chip"><span class="dot bg-accent pulse-dot" aria-hidden="true"></span><span id="call-duration" class="tabular-nums" role="timer" aria-label="Call duration">00:00</span></span>
     </div>
   </header>
 
@@ -264,6 +169,18 @@
     </div>
   </div>
 </main>
+
+<dialog id="perm-dialog" class="perm-dialog" aria-labelledby="perm-title" aria-describedby="perm-msg">
+  <div class="flex flex-col items-center gap-4 text-center">
+    <span class="grid place-items-center w-14 h-14 rounded-2xl bg-stage-3 border border-stage-line text-accent" aria-hidden="true">
+      <svg class="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="2.5" y="6" width="13" height="12" rx="2"/><path d="M15.5 10.5l6-3.5v10l-6-3.5"/></svg>
+    </span>
+    <h2 id="perm-title" class="text-xl font-semibold tracking-tight">Allow camera and microphone</h2>
+    <p id="perm-msg" class="text-sm text-fog leading-relaxed"></p>
+    <button id="btn-perm-allow" type="button" class="btn w-full min-h-12 rounded-xl bg-accent text-ink font-semibold hover:bg-[#d6f78c]">Allow access</button>
+    <button id="btn-perm-skip" type="button" class="text-sm text-fog hover:text-paper rounded-md px-2 py-1">Not now</button>
+  </div>
+</dialog>
 
 <script type="module" src="/src/main.ts"></script>
 </body>

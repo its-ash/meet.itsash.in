@@ -24,11 +24,15 @@ import {
   getMicStream,
   getOutgoingVideoResolution,
   getScreenStream,
+  isBlocked,
   loadEnhancer,
+  permissionDenied,
   pollConnectionQuality,
   prioritizeAudio,
   restoreBrowserVoiceProcessing,
   tuneSdp,
+  watchPermissions,
+  type InitialMedia,
   type NetworkStats,
   type DeviceConstraints,
 } from "./rtc";
@@ -72,6 +76,8 @@ export type CallEvent =
   | { type: "local-stream"; stream: MediaStream }
   /** Which local capture devices are currently available (both are optional). */
   | { type: "media"; audio: boolean; video: boolean }
+  /** Camera or mic permission was refused (`denied`: the browser no longer prompts). */
+  | { type: "permission"; blocked: boolean; denied: boolean }
   | { type: "remote-stream"; stream: MediaStream }
   | { type: "screen-share-started" }
   | { type: "screen-share-stopped" };
@@ -113,6 +119,11 @@ export class CallSession {
   private videoDeviceId: string | undefined;
   private micEnabled = true;
   private cameraBusy = false;
+  private fx: Promise<ArrayBuffer | null> = Promise.resolve(null);
+  private mediaChain: Promise<void> = Promise.resolve();
+  private asking: Promise<void> | null = null;
+  private blocked = false;
+  private unwatch: (() => void) | null = null;
 
   constructor(
     private readonly roomId: string,
@@ -126,14 +137,36 @@ export class CallSession {
   async start(): Promise<void> {
     // Warm the ICE server cache while the permission prompt is open.
     void getIceServers();
-    const fx = loadEnhancer();
-    const media = fx.then((bytes) => getInitialMedia(!!bytes));
+    this.fx = loadEnhancer();
+    const media = this.fx.then((bytes) => getInitialMedia(!!bytes));
+    this.unwatch = watchPermissions(() => {
+      if (this.blocked) void this.requestMedia();
+    });
     try {
       await ensureWasm();
       if (!this.closed) await this.openSignaling();
     } finally {
-      void media.then(async (stream) => this.attachMedia(stream, await fx)).catch(() => undefined);
+      void this.queueMedia(media);
     }
+  }
+
+  /** Asks for camera and mic again (dialog button or a permission change). The camera stays off. */
+  requestMedia(): Promise<void> {
+    if (this.closed) return Promise.resolve();
+    this.asking ??= this.queueMedia(this.fx.then((bytes) => getInitialMedia(!!bytes))).finally(() => {
+      this.asking = null;
+    });
+    return this.asking;
+  }
+
+  private queueMedia(media: Promise<InitialMedia>): Promise<void> {
+    this.mediaChain = this.mediaChain.then(async () => this.attachMedia(await media, await this.fx)).catch(() => undefined);
+    return this.mediaChain;
+  }
+
+  private setBlocked(blocked: boolean, denied: boolean): void {
+    this.blocked = blocked;
+    this.onEvent({ type: "permission", blocked, denied });
   }
 
   private async openSignaling(): Promise<void> {
@@ -150,24 +183,29 @@ export class CallSession {
     document.addEventListener("visibilitychange", this.onWake);
   }
 
-  private async attachMedia(stream: MediaStream, bytes: ArrayBuffer | null): Promise<void> {
+  private async attachMedia({ stream, blocked, denied }: InitialMedia, bytes: ArrayBuffer | null): Promise<void> {
     const [mic] = stream.getAudioTracks();
-    if (this.closed || this.micTrack()) {
-      mic?.stop();
-      if (this.closed) return;
-    } else if (mic) {
-      mic.enabled = this.micEnabled;
-      this.localStream.addTrack(mic);
+    const add = !this.closed && !this.micTrack() ? mic : undefined;
+    if (mic && !add) mic.stop();
+    if (this.closed) return;
+    if (add) {
+      add.enabled = this.micEnabled;
+      this.localStream.addTrack(add);
     }
+    this.setBlocked(blocked, denied);
 
-    const audio = await AudioPipeline.create(bytes, this.micTrack(), () => void this.routeAudio());
-    if (this.closed) {
-      audio?.close();
-      return;
+    if (!this.audio) {
+      const audio = await AudioPipeline.create(bytes, this.micTrack(), () => void this.routeAudio());
+      if (this.closed) {
+        audio?.close();
+        return;
+      }
+      this.audio = audio;
+      if (this.screenStream) audio?.setScreen(this.screenAudio());
+    } else if (add) {
+      this.audio.setMic(add);
     }
-    this.audio = audio;
-    if (bytes && !audio?.enhanced) void restoreBrowserVoiceProcessing(this.micTrack());
-    if (this.screenStream) audio?.setScreen(this.screenAudio());
+    if (add && bytes && !this.audio?.enhanced) void restoreBrowserVoiceProcessing(add);
 
     this.onEvent({ type: "local-stream", stream: this.localStream });
     this.emitMedia();
@@ -630,10 +668,13 @@ export class CallSession {
     if (this.closed || this.cameraBusy || enabled === !!this.cameraTrack) return !!this.cameraTrack;
     this.cameraBusy = true;
     try {
-      if (enabled) await this.useCameraTrack(await getCameraTrack(this.videoDeviceId));
-      else await this.dropCamera();
-    } catch {
-      // Permission denied / no camera / camera busy — stay audio-only.
+      if (enabled) {
+        await this.useCameraTrack(await getCameraTrack(this.videoDeviceId));
+        if (this.blocked && this.micTrack()) this.setBlocked(false, false);
+      } else await this.dropCamera();
+    } catch (e) {
+      // Permission refused / no camera / camera busy — stay audio-only.
+      if (isBlocked(e)) this.setBlocked(true, await permissionDenied());
       this.emitMedia();
     } finally {
       this.cameraBusy = false;
@@ -706,6 +747,8 @@ export class CallSession {
     removeEventListener("pagehide", this.onPageHide);
     removeEventListener("online", this.onWake);
     document.removeEventListener("visibilitychange", this.onWake);
+    this.unwatch?.();
+    this.unwatch = null;
     this.clearReconnectTimer();
     this.clearRecoveryTimer();
     this.clearSocketRetry();

@@ -1,27 +1,30 @@
 import init, { normalize_room_id } from "./wasm/wasm_signal.js";
-import { FULL_ROOM_POLL_MS, SIGNAL_NEW_ROOM_URL } from "./config";
+import { DOWNLOAD_URL, FULL_ROOM_POLL_MS, SIGNAL_NEW_ROOM_URL } from "./config";
 import { CallSession, isRoomFull, type CallEvent } from "./call";
 import { listDevices } from "./rtc";
-import { bindInstallButton, registerServiceWorker } from "./pwa";
+import { registerServiceWorker } from "./pwa";
 import {
   bindCameraToggle,
   bindCopyLink,
   bindDevicePicker,
   bindEndCall,
+  bindInstallLink,
   bindMicToggle,
+  bindPermissionDialog,
   bindPipToggle,
   bindShareToggle,
   bindStartNewFromFull,
   hideNetworkIndicator,
   populateDeviceSelects,
+  setAlone,
   setCallRoomCode,
   setEndedMessage,
   setLandingError,
   setLocalMediaState,
-  setLocalPreview,
   setLocalVideoStream,
   setNetworkIndicator,
   setPeerStatusBadge,
+  setPermission,
   setPipButtonState,
   setReconnectingIndicator,
   setRemoteVideoStream,
@@ -74,20 +77,24 @@ function joinRoom(rawInput: string): void {
 function handleCallEvent(event: CallEvent): void {
   switch (event.type) {
     case "local-stream":
-      setLocalPreview(event.stream);
       setLocalVideoStream(event.stream);
       break;
     case "media":
       setLocalMediaState(event.audio, event.video);
+      break;
+    case "permission":
+      setPermission(event.blocked, event.denied);
       break;
     case "remote-stream":
       setRemoteVideoStream(event.stream);
       break;
     case "waiting":
       stopCallDurationTimer();
-      showView("waiting");
+      setAlone(true);
+      showView("call");
       break;
     case "connected":
+      setAlone(false);
       showView("call");
       startCallDurationTimer();
       hideNetworkIndicator();
@@ -115,7 +122,7 @@ function handleCallEvent(event: CallEvent): void {
       showView("full");
       break;
     case "peer-left":
-      // The "waiting" event that follows drives the UI back to the waiting view.
+      // The "waiting" event that follows shows the waiting panel again.
       break;
     case "screen-share-started":
       sharingScreen = true;
@@ -133,6 +140,7 @@ async function enterRoom(roomId: string): Promise<void> {
   const token = ++enterToken;
   activeSession?.stop();
   activeSession = null;
+  setPermission(false, false);
 
   while (await isRoomFull(roomId)) {
     if (token !== enterToken) return;
@@ -144,7 +152,8 @@ async function enterRoom(roomId: string): Promise<void> {
 
   setRoomLink(roomId);
   setCallRoomCode(roomId);
-  showView("waiting");
+  setAlone(true);
+  showView("call");
 
   const session = new CallSession(roomId, handleCallEvent);
   activeSession = session;
@@ -178,6 +187,7 @@ function bindCallControls(): void {
     activeSession?.setMicEnabled(enabled);
   });
   bindCameraToggle(async (enable) => (await activeSession?.setCameraEnabled(enable)) ?? false);
+  bindPermissionDialog(() => activeSession?.requestMedia() ?? Promise.resolve());
   bindEndCall(() => {
     activeSession?.stop();
     location.href = "/";
@@ -233,9 +243,9 @@ async function togglePip(): Promise<void> {
 async function main(): Promise<void> {
   addEventListener("pageshow", (e) => e.persisted && location.reload());
   registerServiceWorker();
-  bindInstallButton();
   await init();
   bindLandingForm();
+  bindInstallLink(DOWNLOAD_URL);
   bindCallControls();
 
   const roomId = currentRoomIdFromPath();
