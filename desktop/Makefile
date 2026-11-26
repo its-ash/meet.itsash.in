@@ -29,6 +29,7 @@ mac: app
 	mkdir -p $(OUT)/dmg
 	cp -R $(APP) $(OUT)/dmg/
 	ln -s /Applications $(OUT)/dmg/Applications
+	cp README.txt $(OUT)/dmg/README.txt
 	diskutil image create from --format UDZO --volumeName Meet $(OUT)/dmg $(OUT)/Meet_$(VERSION).dmg
 	rm -rf $(OUT)/dmg
 
