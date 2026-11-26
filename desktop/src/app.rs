@@ -6,12 +6,13 @@ use std::time::{Duration, Instant};
 
 use anyhow::Result;
 use eframe::egui::{
-    self, Align2, Button, Color32, ColorImage, ComboBox, Context, CornerRadius, FontId, Frame, Id, Image, Key, Margin,
-    Modal, Rect, RichText, Sense, Stroke, TextEdit, TextureHandle, TextureId, TextureOptions, Ui, UiBuilder, Vec2, pos2,
-    vec2,
+    self, Align2, Button, Color32, ColorImage, ComboBox, Context, CursorIcon, FontId, Frame, Id, Image, Key, Margin,
+    Modal, Rect, RichText, Role, Sense, Stroke, TextEdit, TextureHandle, TextureId, TextureOptions, Ui, UiBuilder, Vec2,
+    WidgetInfo, pos2, vec2,
 };
 
 use crate::call::{Call, Quality, Status};
+use crate::icons::{self, Icon};
 use crate::media::{self, Capture, Handle, Kind, Pipes, Slot, lock};
 use crate::net;
 use crate::perm::{self, Access, Dev};
@@ -31,6 +32,9 @@ const NOTICE_FOR: Duration = Duration::from_secs(5);
 const COPIED_FOR: Duration = Duration::from_millis(1_600);
 const PERM_POLL: Duration = Duration::from_secs(1);
 const SETTINGS: &str = if cfg!(target_os = "macos") { "System Settings" } else { "Settings" };
+const CTL_W: f32 = 72.0;
+const CTL_GAP: f32 = 10.0;
+const CTL_R: f32 = 26.0;
 
 pub struct App {
     code: String,
@@ -42,6 +46,7 @@ pub struct App {
 impl App {
     pub fn new(cc: &eframe::CreationContext<'_>) -> Self {
         cc.egui_ctx.set_visuals(egui::Visuals::light());
+        egui_extras::install_image_loaders(&cc.egui_ctx);
         Self { code: String::new(), err: None, busy: None, s: None }
     }
 
@@ -82,10 +87,13 @@ impl App {
                     );
                     let join = ui.add_enabled(
                         room.is_some() && !busy,
-                        Button::new(RichText::new("Join").size(17.0).color(Color32::WHITE))
-                            .fill(ACCENT)
-                            .corner_radius(10)
-                            .min_size(vec2(100.0, 44.0)),
+                        Button::new((
+                            RichText::new("Join").size(17.0).color(Color32::WHITE),
+                            icons::ARROW.img(18.0).tint(Color32::WHITE),
+                        ))
+                        .fill(ACCENT)
+                        .corner_radius(10)
+                        .min_size(vec2(100.0, 44.0)),
                     );
                     go = join.clicked() || (r.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter)));
                 });
@@ -98,7 +106,7 @@ impl App {
                 let label = if busy { "Creating…" } else { "New meeting" };
                 let new = ui.add_enabled(
                     !busy,
-                    Button::new(RichText::new(label).size(17.0).color(INK))
+                    Button::new((icons::NEW.img(20.0).tint(INK), RichText::new(label).size(17.0).color(INK)))
                         .fill(Color32::WHITE)
                         .stroke(Stroke::new(1.0, Color32::from_rgb(209, 213, 219)))
                         .corner_radius(10)
@@ -385,7 +393,7 @@ impl Session {
         egui::CentralPanel::no_frame().frame(Frame::NONE.fill(DARK_BG)).show(ui, |ui| {
             let full = ui.max_rect();
             let top = Rect::from_min_max(full.min, pos2(full.max.x, full.min.y + 56.0));
-            let bottom = Rect::from_min_max(pos2(full.min.x, full.max.y - 88.0), full.max);
+            let bottom = Rect::from_min_max(pos2(full.min.x, full.max.y - 100.0), full.max);
             let stage = Rect::from_min_max(pos2(full.min.x + 16.0, top.max.y), pos2(full.max.x - 16.0, bottom.min.y));
             self.top_bar(ui, top, v);
             if v.status == Status::Full {
@@ -447,7 +455,8 @@ impl Session {
                 ui.label(RichText::new(&link).monospace().size(15.0).color(Color32::WHITE));
                 ui.add_space(14.0);
                 let copied = self.copied.is_some_and(|c| c.elapsed() < COPIED_FOR);
-                let b = Button::new(RichText::new(if copied { "Copied" } else { "Copy link" }).size(15.0).color(Color32::WHITE))
+                let (icon, text) = if copied { (icons::CHECK, "Copied") } else { (icons::COPY, "Copy link") };
+                let b = Button::new((icon.img(16.0).tint(Color32::WHITE), RichText::new(text).size(15.0).color(Color32::WHITE)))
                     .fill(ACCENT)
                     .corner_radius(10)
                     .min_size(vec2(140.0, 38.0));
@@ -515,38 +524,32 @@ impl Session {
         let muted = self.p.muted.load(Relaxed) || self.mic.is_none();
         let cam = self.sharing(Kind::Camera);
         let screen = self.sharing(Kind::Screen);
-        let pill = |text: &str, on: bool, warn: bool| {
-            let fill = if warn { RED } else if on { Color32::WHITE } else { CTRL };
-            let color = if on && !warn { INK } else { Color32::WHITE };
-            Button::new(RichText::new(text).size(15.0).color(color))
-                .fill(fill)
-                .corner_radius(CornerRadius::same(24))
-                .min_size(vec2(0.0, 48.0))
-        };
-        let widths: f32 = if full { 120.0 } else { 120.0 * 4.0 + 64.0 + 12.0 * 4.0 };
+        let state = |on: bool| if on { (Color32::WHITE, INK) } else { (CTRL, Color32::WHITE) };
+        let n = if full { 1.0 } else { 5.0 };
         ui.scope_builder(UiBuilder::new().max_rect(r), |ui| {
             ui.horizontal_centered(|ui| {
-                ui.add_space(((r.width() - widths) / 2.0).max(16.0));
-                ui.spacing_mut().item_spacing.x = 12.0;
+                ui.add_space(((r.width() - n * CTL_W - (n - 1.0) * CTL_GAP) / 2.0).max(16.0));
+                ui.spacing_mut().item_spacing.x = CTL_GAP;
                 if !full {
-                    let mic_text = if self.mic.is_none() { "Mic off" } else if muted { "Unmute" } else { "Mute" };
-                    if ui.add_sized([120.0, 48.0], pill(mic_text, false, muted)).clicked() {
+                    let (f, c) = if muted { (RED, Color32::WHITE) } else { state(false) };
+                    let label = if self.mic.is_none() { "Mic off" } else if muted { "Unmute" } else { "Mute" };
+                    if ctl(ui, if muted { icons::MIC_OFF } else { icons::MIC }, label, f, c) {
                         self.toggle_mic();
                     }
-                    if ui.add_sized([120.0, 48.0], pill(if cam { "Stop camera" } else { "Camera" }, cam, false)).clicked() {
+                    let (f, c) = state(cam);
+                    if ctl(ui, if cam { icons::CAM } else { icons::CAM_OFF }, if cam { "Stop video" } else { "Camera" }, f, c) {
                         self.toggle_cam(&ctx);
                     }
-                    if ui.add_sized([120.0, 48.0], pill(if screen { "Stop sharing" } else { "Share screen" }, screen, false)).clicked() {
+                    let (f, c) = state(screen);
+                    if ctl(ui, icons::SHARE, if screen { "Stop share" } else { "Share" }, f, c) {
                         self.toggle_screen();
                     }
-                    if ui.add_sized([64.0, 48.0], pill("⚙", self.devs, false)).clicked() {
+                    let (f, c) = state(self.devs);
+                    if ctl(ui, icons::DEVICES, "Devices", f, c) {
                         self.devs = !self.devs;
                     }
                 }
-                let b = Button::new(RichText::new("Leave").size(15.0).color(Color32::WHITE))
-                    .fill(RED)
-                    .corner_radius(CornerRadius::same(24));
-                leave = ui.add_sized([120.0, 48.0], b).clicked();
+                leave = ctl(ui, icons::LEAVE, "Leave", RED, Color32::WHITE);
             });
         });
         leave
@@ -652,7 +655,7 @@ impl Session {
                 }
                 ui.add_space(18.0);
                 let label = if denied { format!("Open {SETTINGS}") } else { "Allow access".to_owned() };
-                let b = Button::new(RichText::new(label).size(15.0).color(Color32::WHITE))
+                let b = Button::new((icons::SHIELD.img(18.0).tint(Color32::WHITE), RichText::new(label).size(15.0).color(Color32::WHITE)))
                     .fill(ACCENT)
                     .corner_radius(10)
                     .min_size(vec2(220.0, 42.0));
@@ -672,6 +675,25 @@ impl Session {
             self.dlg = false;
         }
     }
+}
+
+fn ctl(ui: &mut Ui, icon: Icon, label: &str, fill: Color32, fg: Color32) -> bool {
+    let (r, resp) = ui.allocate_exact_size(vec2(CTL_W, 2.0 * CTL_R + 24.0), Sense::click());
+    resp.widget_info(|| WidgetInfo::labeled(Role::Button, true, label));
+    let c = pos2(r.center().x, r.min.y + CTL_R);
+    let fill = if resp.hovered() {
+        fill.lerp_to_gamma(if fill == Color32::WHITE { Color32::GRAY } else { Color32::WHITE }, 0.15)
+    } else {
+        fill
+    };
+    let p = ui.painter();
+    p.circle_filled(c, CTL_R, fill);
+    if resp.has_focus() {
+        p.circle_stroke(c, CTL_R + 3.0, Stroke::new(2.0, ACCENT));
+    }
+    icon.img(22.0).tint(fg).paint_at(ui, Rect::from_center_size(c, vec2(22.0, 22.0)));
+    p.text(pos2(c.x, r.max.y - 8.0), Align2::CENTER_CENTER, label, FontId::proportional(12.5), Color32::from_gray(210));
+    resp.on_hover_cursor(CursorIcon::PointingHand).clicked()
 }
 
 fn pick(ui: &mut Ui, label: &str, sel: &mut Option<String>, list: &[String]) {

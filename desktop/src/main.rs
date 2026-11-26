@@ -2,6 +2,7 @@
 
 mod app;
 mod call;
+mod icons;
 mod media;
 mod net;
 mod perm;

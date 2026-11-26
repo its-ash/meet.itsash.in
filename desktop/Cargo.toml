@@ -10,6 +10,7 @@ anyhow = "1"
 bytes = "1"
 cpal = "0.18"
 eframe = { version = "0.37", default-features = false, features = ["accesskit", "clipboard", "default_fonts", "wgpu"] }
+egui_extras = { version = "0.37", default-features = false, features = ["svg"] }
 futures-util = { version = "0.3", default-features = false, features = ["sink", "std"] }
 nokhwa = { version = "0.10", features = ["input-native"] }
 openh264 = "0.9"
