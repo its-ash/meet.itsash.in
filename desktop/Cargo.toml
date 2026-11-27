@@ -1,6 +1,6 @@
 [package]
 name = "meet"
-version = "1.0.0"
+version = "1.0.1"
 description = "Meet: peer-to-peer video calls for two"
 edition = "2024"
 publish = false
